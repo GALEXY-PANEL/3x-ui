@@ -281,7 +281,7 @@ export default function AdminRolesPage() {
           if (Array.isArray(parsed)) {
             perms = parsed;
           } else if (typeof parsed === 'object' && parsed !== null) {
-            perms = Object.keys(parsed).map((k) => );
+            perms = Object.keys(parsed);
           }
         } catch {
           if (typeof record.permissions === 'string' && record.permissions) {
