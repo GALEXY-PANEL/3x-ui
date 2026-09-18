@@ -29,6 +29,7 @@ import {
   PushpinOutlined,
   ReadOutlined,
   SafetyOutlined,
+  SafetyCertificateOutlined,
   SearchOutlined,
   SettingOutlined,
   SunOutlined,
@@ -86,7 +87,7 @@ const iconByName: Record<IconName, ComponentType> = {
   outbound: ExportOutlined,
   routing: SwapOutlined,
   admins: TeamOutlined,
-  roles: SafetyOutlined,
+  roles: SafetyCertificateOutlined,
 };
 
 function DonateButton({ ariaLabel }: { ariaLabel: string }) {

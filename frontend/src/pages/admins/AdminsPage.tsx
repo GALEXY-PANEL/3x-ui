@@ -4,6 +4,7 @@ import {
   Button,
   Card,
   Col,
+  ConfigProvider,
   Form,
   Input,
   InputNumber,
@@ -13,22 +14,28 @@ import {
   Select,
   Space,
   Spin,
+  Statistic,
   Table,
   Tag,
   Tooltip,
   message,
+  theme,
 } from 'antd';
 import type { TableColumnsType } from 'antd';
 import {
+  CheckCircleOutlined,
+  CloseCircleOutlined,
   DeleteOutlined,
   EditOutlined,
   PlusOutlined,
   TeamOutlined,
   UserOutlined,
+  PieChartOutlined,
 } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
-import { theme } from 'antd';
+import { useTheme } from '@/hooks/useTheme';
+import { useMediaQuery } from '@/hooks/useMediaQuery';
 import { usePageTitle } from '@/hooks/usePageTitle';
 import { HttpUtil, SizeFormatter } from '@/utils';
 import AppSidebar from '@/layouts/AppSidebar';
@@ -52,8 +59,10 @@ interface AdminRole {
 }
 
 export default function AdminsPage() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   usePageTitle(t('admins.title', 'مدیریت ادمین‌ها و نمایندگان'));
+  const { isDark, isUltra, antdThemeConfig } = useTheme();
+  const { isMobile } = useMediaQuery();
   const { token } = theme.useToken();
   const queryClient = useQueryClient();
 
@@ -78,6 +87,10 @@ export default function AdminsPage() {
   });
 
   const roleMap = roles.reduce((acc, r) => ({ ...acc, [r.id]: r.name }), {} as Record<number, string>);
+
+  const totalAdmins = admins.length;
+  const activeAdmins = admins.filter((a) => a.status === 'active').length;
+  const totalTraffic = admins.reduce((acc, a) => acc + (a.usedBytes || 0), 0);
 
   const saveMutation = useMutation({
     mutationFn: async (values: any) => {
@@ -141,7 +154,7 @@ export default function AdminsPage() {
       key: 'username',
       render: (text) => (
         <Space>
-          <UserOutlined />
+          <UserOutlined style={{ color: token.colorPrimary }} />
           <strong>{text}</strong>
         </Space>
       ),
@@ -150,15 +163,15 @@ export default function AdminsPage() {
       title: t('admins.role', 'نقش'),
       dataIndex: 'roleId',
       key: 'roleId',
-      render: (id) => <Tag color="blue">{roleMap[id] || `نقش #${id}`}</Tag>,
+      render: (id) => <Tag color="geekblue">{roleMap[id] || `نقش #${id}`}</Tag>,
     },
     {
       title: t('admins.status', 'وضعیت'),
       dataIndex: 'status',
       key: 'status',
       render: (status) => (
-        <Tag color={status === 'active' ? 'success' : 'error'}>
-          {status === 'active' ? 'فعال' : 'غیرفعال'}
+        <Tag color={status === 'active' ? 'success' : 'error'} icon={status === 'active' ? <CheckCircleOutlined /> : <CloseCircleOutlined />}>
+          {status === 'active' ? t('common.active', 'فعال') : t('common.disabled', 'غیرفعال')}
         </Tag>
       ),
     },
@@ -167,8 +180,8 @@ export default function AdminsPage() {
       key: 'traffic',
       render: (_, record) => (
         <span>
-          {SizeFormatter.formatBytes(record.usedBytes || 0)} /{' '}
-          {record.dataLimit > 0 ? SizeFormatter.formatBytes(record.dataLimit) : 'نامحدود'}
+          {SizeFormatter.sizeFormat(record.usedBytes || 0)} /{' '}
+          {record.dataLimit > 0 ? SizeFormatter.sizeFormat(record.dataLimit) : t('common.unlimited', 'نامحدود')}
         </span>
       ),
     },
@@ -176,11 +189,12 @@ export default function AdminsPage() {
       title: t('admins.note', 'یادداشت'),
       dataIndex: 'note',
       key: 'note',
+      render: (text) => text || '-',
     },
     {
       title: t('common.actions', 'عملیات'),
       key: 'actions',
-      width: 120,
+      width: 110,
       render: (_, record) => (
         <Space size="middle">
           <Tooltip title={t('common.edit', 'ویرایش')}>
@@ -208,75 +222,114 @@ export default function AdminsPage() {
     },
   ];
 
+  const pageClass = `clients-page${isDark ? ' is-dark' : ''}${isUltra ? ' is-ultra' : ''}`;
+
   return (
-    <Layout style={{ minHeight: '100vh', background: 'transparent' }}>
-      <AppSidebar />
-      <Layout.Content style={{ padding: '24px', maxWidth: 1200, margin: '0 auto', width: '100%' }}>
-        <Row justify="space-between" align="middle" style={{ marginBottom: 24 }}>
-          <Col>
-            <h1 style={{ fontSize: '24px', margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <TeamOutlined style={{ color: token.colorPrimary }} />
-              {t('admins.title', 'مدیریت ادمین‌ها و نمایندگان')}
-            </h1>
-          </Col>
-          <Col>
-            <Button type="primary" icon={<PlusOutlined />} onClick={openCreateModal}>
-              {t('admins.create', 'افزودن ادمین جدید')}
-            </Button>
-          </Col>
-        </Row>
+    <ConfigProvider theme={antdThemeConfig}>
+      <Layout className={pageClass}>
+        <AppSidebar />
+        <Layout className="content-shell">
+          <Layout.Content id="content-layout" className="content-area">
+            <Row gutter={[isMobile ? 8 : 16, isMobile ? 8 : 12]}>
+              <Col span={24}>
+                <Card size="small" hoverable className="summary-card">
+                  <Row gutter={[16, isMobile ? 16 : 12]}>
+                    <Col xs={12} sm={12} md={8}>
+                      <Statistic
+                        title={t('admins.totalAdmins', 'کل ادمین‌ها')}
+                        value={String(totalAdmins)}
+                        prefix={<TeamOutlined />}
+                      />
+                    </Col>
+                    <Col xs={12} sm={12} md={8}>
+                      <Statistic
+                        title={t('admins.activeAdmins', 'ادمین‌های فعال')}
+                        value={String(activeAdmins)}
+                        prefix={<CheckCircleOutlined />}
+                      />
+                    </Col>
+                    <Col xs={24} sm={24} md={8}>
+                      <Statistic
+                        title={t('admins.totalUsage', 'کل ترافیک مصرفی ادمین‌ها')}
+                        value={SizeFormatter.sizeFormat(totalTraffic)}
+                        prefix={<PieChartOutlined />}
+                      />
+                    </Col>
+                  </Row>
+                </Card>
+              </Col>
 
-        <Card style={{ background: 'rgba(20, 24, 39, 0.7)', backdropFilter: 'blur(12px)', border: '1px solid rgba(255,255,255,0.1)' }}>
-          <Table
-            dataSource={admins}
-            columns={columns}
-            rowKey="id"
-            loading={isLoadingAdmins}
-            pagination={{ pageSize: 10 }}
-          />
-        </Card>
+              <Col span={24}>
+                <Card
+                  size="small"
+                  hoverable
+                  title={
+                    <Space>
+                      <TeamOutlined style={{ color: token.colorPrimary }} />
+                      <span>{t('admins.title', 'مدیریت ادمین‌ها و نمایندگان')}</span>
+                    </Space>
+                  }
+                  extra={
+                    <Button type="primary" icon={<PlusOutlined />} onClick={openCreateModal}>
+                      {t('admins.create', 'افزودن ادمین جدید')}
+                    </Button>
+                  }
+                >
+                  <Table
+                    dataSource={admins}
+                    columns={columns}
+                    rowKey="id"
+                    loading={isLoadingAdmins}
+                    pagination={{ pageSize: 10 }}
+                    locale={{ emptyText: t('common.empty', 'داده‌ای وجود ندارد') }}
+                  />
+                </Card>
+              </Col>
+            </Row>
 
-        <Modal
-          title={editingAdmin ? t('admins.edit', 'ویرایش ادمین') : t('admins.create', 'ایجاد ادمین جدید')}
-          open={modalVisible}
-          onCancel={() => setModalVisible(false)}
-          onOk={() => form.submit()}
-          confirmLoading={saveMutation.isPending}
-        >
-          <Form form={form} layout="vertical" onFinish={(vals) => saveMutation.mutate(vals)}>
-            <Form.Item name="username" label={t('admins.username', 'نام کاربری')} rules={[{ required: true }]}>
-              <Input placeholder="username" disabled={!!editingAdmin} />
-            </Form.Item>
-            <Form.Item
-              name="password"
-              label={t('admins.password', 'رمز عبور')}
-              rules={[{ required: !editingAdmin, message: 'لطفاً رمز عبور را وارد کنید' }]}
+            <Modal
+              title={editingAdmin ? t('admins.edit', 'ویرایش ادمین') : t('admins.create', 'ایجاد ادمین جدید')}
+              open={modalVisible}
+              onCancel={() => setModalVisible(false)}
+              onOk={() => form.submit()}
+              confirmLoading={saveMutation.isPending}
             >
-              <Input.Password placeholder={editingAdmin ? 'در صورت عدم تغییر خالی بگذارید' : 'password'} />
-            </Form.Item>
-            <Form.Item name="roleId" label={t('admins.role', 'نقش دسترسی')} rules={[{ required: true }]}>
-              <Select
-                options={roles.map((r) => ({ label: r.name, value: r.id }))}
-                placeholder="انتخاب نقش"
-              />
-            </Form.Item>
-            <Form.Item name="status" label={t('admins.status', 'وضعیت')} rules={[{ required: true }]}>
-              <Select
-                options={[
-                  { label: 'فعال (Active)', value: 'active' },
-                  { label: 'غیرفعال (Disabled)', value: 'disabled' },
-                ]}
-              />
-            </Form.Item>
-            <Form.Item name="dataLimitGB" label={t('admins.dataLimit', 'سقف کل ترافیک (GB)')}>
-              <InputNumber min={0} style={{ width: '100%' }} placeholder="0 = نامحدود" />
-            </Form.Item>
-            <Form.Item name="note" label={t('admins.note', 'یادداشت')}>
-              <Input.TextArea placeholder="توضیحات و یادداشت" />
-            </Form.Item>
-          </Form>
-        </Modal>
-      </Layout.Content>
-    </Layout>
+              <Form form={form} layout="vertical" onFinish={(vals) => saveMutation.mutate(vals)}>
+                <Form.Item name="username" label={t('admins.username', 'نام کاربری')} rules={[{ required: true }]}>
+                  <Input placeholder="username" disabled={!!editingAdmin} />
+                </Form.Item>
+                <Form.Item
+                  name="password"
+                  label={t('admins.password', 'رمز عبور')}
+                  rules={[{ required: !editingAdmin, message: 'لطفاً رمز عبور را وارد کنید' }]}
+                >
+                  <Input.Password placeholder={editingAdmin ? 'در صورت عدم تغییر خالی بگذارید' : 'password'} />
+                </Form.Item>
+                <Form.Item name="roleId" label={t('admins.role', 'نقش دسترسی')} rules={[{ required: true }]}>
+                  <Select
+                    options={roles.map((r) => ({ label: r.name, value: r.id }))}
+                    placeholder="انتخاب نقش"
+                  />
+                </Form.Item>
+                <Form.Item name="status" label={t('admins.status', 'وضعیت')} rules={[{ required: true }]}>
+                  <Select
+                    options={[
+                      { label: 'فعال (Active)', value: 'active' },
+                      { label: 'غیرفعال (Disabled)', value: 'disabled' },
+                    ]}
+                  />
+                </Form.Item>
+                <Form.Item name="dataLimitGB" label={t('admins.dataLimit', 'سقف کل ترافیک (GB)')}>
+                  <InputNumber min={0} style={{ width: '100%' }} placeholder="0 = نامحدود" />
+                </Form.Item>
+                <Form.Item name="note" label={t('admins.note', 'یادداشت')}>
+                  <Input.TextArea placeholder="توضیحات و یادداشت" />
+                </Form.Item>
+              </Form>
+            </Modal>
+          </Layout.Content>
+        </Layout>
+      </Layout>
+    </ConfigProvider>
   );
 }
