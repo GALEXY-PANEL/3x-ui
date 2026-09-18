@@ -35,10 +35,15 @@ const initialUltra = readBool(STORAGE_ULTRA, false);
 applyDom(initialDark, initialUltra);
 
 const DARK_TOKENS = {
-  colorBgBase: '#1a1b1f',
-  colorBgLayout: '#1a1b1f',
-  colorBgContainer: '#23252b',
-  colorBgElevated: '#2d2f37',
+  colorPrimary: '#8b5cf6',
+  colorPrimaryHover: '#a78bfa',
+  colorPrimaryActive: '#7c3aed',
+  colorBgBase: '#0b0f19',
+  colorBgLayout: '#070a13',
+  colorBgContainer: 'rgba(17, 24, 39, 0.75)',
+  colorBgElevated: '#1f293d',
+  colorBorder: 'rgba(139, 92, 246, 0.2)',
+  colorBorderSecondary: 'rgba(255, 255, 255, 0.08)',
 };
 const ULTRA_DARK_TOKENS = {
   colorBgBase: '#000',
@@ -47,12 +52,12 @@ const ULTRA_DARK_TOKENS = {
   colorBgElevated: '#1a1a1e',
 };
 const DARK_LAYOUT_TOKENS = {
-  bodyBg: '#1a1b1f',
-  headerBg: '#15161a',
+  bodyBg: '#070a13',
+  headerBg: '#0b0f19',
   headerColor: '#ffffff',
-  footerBg: '#1a1b1f',
-  siderBg: '#15161a',
-  triggerBg: '#23252b',
+  footerBg: '#070a13',
+  siderBg: 'rgba(11, 15, 25, 0.85)',
+  triggerBg: '#1f293d',
   triggerColor: '#ffffff',
 };
 const ULTRA_DARK_LAYOUT_TOKENS = {
@@ -65,9 +70,9 @@ const ULTRA_DARK_LAYOUT_TOKENS = {
   triggerColor: '#ffffff',
 };
 const DARK_MENU_TOKENS = {
-  darkItemBg: '#15161a',
-  darkSubMenuItemBg: '#1a1b1f',
-  darkPopupBg: '#23252b',
+  darkItemBg: 'transparent',
+  darkSubMenuItemBg: 'rgba(11, 15, 25, 0.6)',
+  darkPopupBg: '#111827',
 };
 const ULTRA_DARK_MENU_TOKENS = {
   darkItemBg: '#050507',
@@ -75,7 +80,7 @@ const ULTRA_DARK_MENU_TOKENS = {
   darkPopupBg: '#101013',
 };
 const DARK_CARD_TOKENS = {
-  colorBorderSecondary: 'rgba(255, 255, 255, 0.06)',
+  colorBorderSecondary: 'rgba(139, 92, 246, 0.15)',
 };
 const ULTRA_DARK_CARD_TOKENS = {
   colorBorderSecondary: 'rgba(255, 255, 255, 0.04)',
