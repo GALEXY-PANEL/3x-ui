@@ -46,6 +46,23 @@ func (s *UserService) CheckUser(username string, password string, twoFactorCode 
 		First(user).
 		Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
+		// Check in admins table
+		var admin model.Admin
+		adminErr := db.Where("username = ?", username).First(&admin).Error
+		if adminErr == nil {
+			if admin.Status != "active" && admin.Status != "" {
+				return nil, errors.New("admin account is disabled")
+			}
+			if crypto.CheckPasswordHash(admin.Password, password) {
+				// Return synthetic user session for admin
+				return &model.User{
+					Id:         100000 + admin.Id,
+					Username:   admin.Username,
+					Password:   admin.Password,
+					LoginEpoch: 0,
+				}, nil
+			}
+		}
 		return nil, errors.New("invalid credentials")
 	} else if err != nil {
 		logger.Warning("check user err:", err)

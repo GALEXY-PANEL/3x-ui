@@ -152,6 +152,19 @@ func getUserByID(id int) (*model.User, error) {
 	if db == nil {
 		return nil, http.ErrServerClosed
 	}
+	if id >= 100000 {
+		adminId := id - 100000
+		var admin model.Admin
+		if err := db.Where("id = ?", adminId).First(&admin).Error; err != nil {
+			return nil, err
+		}
+		return &model.User{
+			Id:         id,
+			Username:   admin.Username,
+			Password:   admin.Password,
+			LoginEpoch: 0,
+		}, nil
+	}
 	user := &model.User{}
 	if err := db.Model(model.User{}).Where("id = ?", id).First(user).Error; err != nil {
 		return nil, err
