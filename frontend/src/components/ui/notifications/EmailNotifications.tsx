@@ -1,11 +1,5 @@
 import { InputNumber } from 'antd';
-import {
-  CloudServerOutlined,
-  ThunderboltOutlined,
-  DesktopOutlined,
-  DashboardOutlined,
-  SafetyOutlined,
-} from '@ant-design/icons';
+import { CloudServerOutlined, ThunderboltOutlined, DesktopOutlined, DashboardOutlined, SafetyOutlined } from '@ant-design/icons';
 import type { AllSetting } from '@/models/setting';
 import { NotificationLayout } from './NotificationLayout';
 import { NotificationGroup } from './NotificationGroup';
@@ -16,29 +10,16 @@ const GROUPS: NotificationGroupConfig[] = [
     icon: <CloudServerOutlined />,
     title: 'eventGroupOutbound',
     events: [
-      {
-        key: 'outbound.down',
-        label: 'eventOutboundDown',
-        settingKey: 'outboundDownThreshold',
-        extra: ({ value, onChange, ariaLabel }) => (
-          <InputNumber
-            size="small"
-            min={1}
-            max={100}
-            value={value}
-            onChange={onChange}
-            aria-label={ariaLabel}
-            style={{ width: 80 }}
-          />
-        ),
-      },
+      { key: 'outbound.down', label: 'eventOutboundDown', settingKey: '' },
       { key: 'outbound.up', label: 'eventOutboundUp', settingKey: '' },
     ],
   },
   {
     icon: <ThunderboltOutlined />,
     title: 'eventGroupXray',
-    events: [{ key: 'xray.crash', label: 'eventXrayCrash', settingKey: '' }],
+    events: [
+      { key: 'xray.crash', label: 'eventXrayCrash', settingKey: '' },
+    ],
   },
   {
     icon: <DesktopOutlined />,
@@ -56,32 +37,16 @@ const GROUPS: NotificationGroupConfig[] = [
         key: 'cpu.high',
         label: 'eventCPUHigh',
         settingKey: 'smtpCpu',
-        extra: ({ value, onChange, ariaLabel }) => (
-          <InputNumber
-            size="small"
-            min={0}
-            max={100}
-            value={value}
-            onChange={onChange}
-            aria-label={ariaLabel}
-            style={{ width: 80 }}
-          />
+        extra: ({ value, onChange }) => (
+          <InputNumber size="small" min={0} max={100} value={value} onChange={onChange} style={{ width: 80 }} />
         ),
       },
       {
         key: 'memory.high',
         label: 'eventMemoryHigh',
         settingKey: 'smtpMemory',
-        extra: ({ value, onChange, ariaLabel }) => (
-          <InputNumber
-            size="small"
-            min={0}
-            max={100}
-            value={value}
-            onChange={onChange}
-            aria-label={ariaLabel}
-            style={{ width: 80 }}
-          />
+        extra: ({ value, onChange }) => (
+          <InputNumber size="small" min={0} max={100} value={value} onChange={onChange} style={{ width: 80 }} />
         ),
       },
     ],
@@ -89,7 +54,9 @@ const GROUPS: NotificationGroupConfig[] = [
   {
     icon: <SafetyOutlined />,
     title: 'eventGroupSecurity',
-    events: [{ key: 'login.attempt', label: 'eventLoginAttempt', settingKey: '' }],
+    events: [
+      { key: 'login.attempt', label: 'eventLoginAttempt', settingKey: '' },
+    ],
   },
 ];
 
@@ -100,15 +67,12 @@ interface Props {
 
 export function EmailNotifications({ allSetting, updateSetting }: Props) {
   const events = allSetting.smtpEnabledEvents || '';
-  const selected = events
-    ? events
-        .split(',')
-        .map((s) => s.trim())
-        .filter(Boolean)
-    : [];
+  const selected = events ? events.split(',').map((s) => s.trim()).filter(Boolean) : [];
 
   function toggle(key: string) {
-    const next = selected.includes(key) ? selected.filter((e) => e !== key) : [...selected, key];
+    const next = selected.includes(key)
+      ? selected.filter((e) => e !== key)
+      : [...selected, key];
     updateSetting({ smtpEnabledEvents: next.join(',') });
   }
 

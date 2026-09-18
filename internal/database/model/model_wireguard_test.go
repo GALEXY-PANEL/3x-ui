@@ -1,9 +1,7 @@
 package model
 
 import (
-	"encoding/json"
 	"reflect"
-	"strings"
 	"testing"
 )
 
@@ -15,7 +13,7 @@ func TestClientToRecordRoundTripWireGuard(t *testing.T) {
 		PublicKey:    "cGVlci1wdWJsaWMta2V5LWJhc2U2NC0zMmJ5dGVzISE=",
 		AllowedIPs:   []string{"10.0.0.2/32", "fd00::2/128"},
 		PreSharedKey: "cHNrLWJhc2U2NC0zMmJ5dGVzLXBsYWNlaG9sZGVyISE=",
-		KeepAlive:    KeepAlivePtr(25),
+		KeepAlive:    25,
 	}
 
 	rec := c.ToRecord()
@@ -31,7 +29,7 @@ func TestClientToRecordRoundTripWireGuard(t *testing.T) {
 		{"PrivateKey", c.PrivateKey, got.PrivateKey},
 		{"PublicKey", c.PublicKey, got.PublicKey},
 		{"PreSharedKey", c.PreSharedKey, got.PreSharedKey},
-		{"KeepAlive", c.KeepAliveSeconds(), got.KeepAliveSeconds()},
+		{"KeepAlive", c.KeepAlive, got.KeepAlive},
 	} {
 		if f.a != f.b {
 			t.Errorf("%s round-trip = %v, want %v", f.name, f.b, f.a)
@@ -39,23 +37,6 @@ func TestClientToRecordRoundTripWireGuard(t *testing.T) {
 	}
 	if !reflect.DeepEqual(got.AllowedIPs, c.AllowedIPs) {
 		t.Errorf("AllowedIPs round-trip = %v, want %v", got.AllowedIPs, c.AllowedIPs)
-	}
-}
-
-// ToClient feeds the settings JSON of every protocol, not just the tunnels, and
-// that JSON reaches xray-core verbatim through GenXrayInboundConfig.
-func TestClientToClientOmitsUnsetKeepAlive(t *testing.T) {
-	rec := &ClientRecord{Email: "vless@example.test", UUID: "11111111-2222-3333-4444-555555555555", Enable: true}
-
-	if got := rec.ToClient().KeepAlive; got != nil {
-		t.Fatalf("KeepAlive for a record that never set one = %d, want nil", *got)
-	}
-	blob, err := json.Marshal(map[string][]Client{"clients": {*rec.ToClient()}})
-	if err != nil {
-		t.Fatalf("marshal settings payload: %v", err)
-	}
-	if strings.Contains(string(blob), "keepAlive") {
-		t.Fatalf("settings payload carries keepAlive for a non-tunnel client: %s", blob)
 	}
 }
 

@@ -48,16 +48,10 @@ func (t *Tgbot) SendBackupToAdmins() {
 	if !t.IsRunning() {
 		return
 	}
-	dbData, err := t.serverService.GetDb()
-	if err != nil {
-		logger.Error("Error in getting db backup: ", err)
-	}
-	dbFilename := t.serverService.BackupFilename("")
-	admins := adminSnapshot()
-	for i, adminId := range admins {
-		t.sendBackupData(adminId, dbData, dbFilename)
+	for i, adminId := range adminIds {
+		t.sendBackup(adminId)
 		// Add delay between sends to avoid Telegram rate limits
-		if i < len(admins)-1 {
+		if i < len(adminIds)-1 {
 			time.Sleep(1 * time.Second)
 		}
 	}
@@ -68,7 +62,7 @@ func (t *Tgbot) sendExhaustedToAdmins() {
 	if !t.IsRunning() {
 		return
 	}
-	for _, adminId := range adminSnapshot() {
+	for _, adminId := range adminIds {
 		t.getExhausted(adminId)
 	}
 }
@@ -111,10 +105,7 @@ func (t *Tgbot) prepareServerUsageInfo() string {
 		t.lastStatus = t.serverService.GetStatus(t.lastStatus)
 		t.setCachedStatus(t.lastStatus)
 	}
-	var onlines []string
-	if process := service.XrayProcess(); process != nil {
-		onlines = process.GetOnlineClients()
-	}
+	onlines := service.XrayProcess().GetOnlineClients()
 
 	info += t.I18nBot("tgbot.messages.hostname", "Hostname=="+hostname)
 	info += t.I18nBot("tgbot.messages.version", "Version=="+config.GetPanelVersion())
@@ -370,12 +361,11 @@ func (t *Tgbot) notifyExhausted() {
 
 // onlineClients retrieves and sends information about online clients.
 func (t *Tgbot) onlineClients(chatId int64, messageID ...int) {
-	process := service.XrayProcess()
-	if process == nil || !process.IsRunning() {
+	if !service.XrayProcess().IsRunning() {
 		return
 	}
 
-	onlines := process.GetOnlineClients()
+	onlines := service.XrayProcess().GetOnlineClients()
 	onlinesCount := len(onlines)
 	output := t.I18nBot("tgbot.messages.onlinesCount", "Count=="+fmt.Sprint(onlinesCount))
 	keyboard := tu.InlineKeyboard(tu.InlineKeyboardRow(
@@ -410,30 +400,26 @@ func (t *Tgbot) onlineClients(chatId int64, messageID ...int) {
 
 // sendBackup sends a backup of the database and configuration files.
 func (t *Tgbot) sendBackup(chatId int64) {
-	dbData, err := t.serverService.GetDb()
-	if err != nil {
-		logger.Error("Error in getting db backup: ", err)
-	}
-	t.sendBackupData(chatId, dbData, t.serverService.BackupFilename(""))
-}
-
-func (t *Tgbot) sendBackupData(chatId int64, dbData []byte, dbFilename string) {
 	output := t.I18nBot("tgbot.messages.hostname", "Hostname=="+hostname)
 	output += t.I18nBot("tgbot.messages.backupTime", "Time=="+time.Now().Format("2006-01-02 15:04:05"))
 	t.SendMsgToTgbot(chatId, output)
 
 	// Send database backup (SQLite file, or a pg_dump archive on PostgreSQL)
-	if dbData != nil {
+	dbData, err := t.serverService.GetDb()
+	if err == nil {
+		dbFilename := t.serverService.BackupFilename("")
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		document := tu.Document(
 			tu.ID(chatId),
 			tu.FileFromBytes(dbData, dbFilename),
 		)
-		_, err := bot.SendDocument(ctx, document)
+		_, err = bot.SendDocument(ctx, document)
 		cancel()
 		if err != nil {
 			logger.Error("Error in uploading backup: ", err)
 		}
+	} else {
+		logger.Error("Error in getting db backup: ", err)
 	}
 
 	// Small delay between file sends
@@ -455,56 +441,5 @@ func (t *Tgbot) sendBackupData(chatId int64, dbData []byte, dbFilename string) {
 		}
 	} else {
 		logger.Error("Error in opening config.json file for backup: ", err)
-	}
-}
-
-// sendBanLogs sends the ban logs to the specified chat.
-func (t *Tgbot) sendBanLogs(chatId int64, dt bool) {
-	if dt {
-		output := t.I18nBot("tgbot.messages.hostname", "Hostname=="+hostname)
-		output += t.I18nBot("tgbot.messages.datetime", "DateTime=="+time.Now().Format("2006-01-02 15:04:05"))
-		t.SendMsgToTgbot(chatId, output)
-	}
-
-	file, err := os.Open(xray.GetIPLimitBannedPrevLogPath())
-	if err == nil {
-		// Check if the file is non-empty before attempting to upload
-		fileInfo, _ := file.Stat()
-		if fileInfo.Size() > 0 {
-			document := tu.Document(
-				tu.ID(chatId),
-				tu.File(file),
-			)
-			_, err = bot.SendDocument(context.Background(), document)
-			if err != nil {
-				logger.Error("Error in uploading IPLimitBannedPrevLog: ", err)
-			}
-		} else {
-			logger.Warning("IPLimitBannedPrevLog file is empty, not uploading.")
-		}
-		file.Close()
-	} else {
-		logger.Error("Error in opening IPLimitBannedPrevLog file for backup: ", err)
-	}
-
-	file, err = os.Open(xray.GetIPLimitBannedLogPath())
-	if err == nil {
-		// Check if the file is non-empty before attempting to upload
-		fileInfo, _ := file.Stat()
-		if fileInfo.Size() > 0 {
-			document := tu.Document(
-				tu.ID(chatId),
-				tu.File(file),
-			)
-			_, err = bot.SendDocument(context.Background(), document)
-			if err != nil {
-				logger.Error("Error in uploading IPLimitBannedLog: ", err)
-			}
-		} else {
-			logger.Warning("IPLimitBannedLog file is empty, not uploading.")
-		}
-		file.Close()
-	} else {
-		logger.Error("Error in opening IPLimitBannedLog file for backup: ", err)
 	}
 }

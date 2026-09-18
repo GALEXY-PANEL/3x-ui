@@ -4,4 +4,3 @@ export * from './outbound-protocol';
 export * from './sniffing';
 export * from './flow';
 export * from './options';
-export * from './traffic-reset';

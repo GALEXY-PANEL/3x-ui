@@ -1,13 +1,3 @@
-// xray-core lowercases a protocol id before it resolves the handler, so a
-// template pasted as "Freedom" still runs as the freedom outbound.
-export function isOutboundProtocol(
-  outbound: { protocol?: unknown } | null | undefined,
-  id: string,
-): boolean {
-  const protocol = outbound?.protocol;
-  return typeof protocol === 'string' && protocol.toLowerCase() === id;
-}
-
 export const OutboundProtocols = Object.freeze({
   Freedom: 'freedom',
   Blackhole: 'blackhole',
@@ -17,7 +7,6 @@ export const OutboundProtocols = Object.freeze({
   Trojan: 'trojan',
   Shadowsocks: 'shadowsocks',
   Wireguard: 'wireguard',
-  AmneziaWG: 'amneziawg',
   Hysteria: 'hysteria',
   Socks: 'socks',
   HTTP: 'http',

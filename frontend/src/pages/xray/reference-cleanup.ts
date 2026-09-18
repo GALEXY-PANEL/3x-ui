@@ -36,12 +36,7 @@ export interface DeletionImpact {
   burst: boolean;
 }
 
-const emptyImpact = (): DeletionImpact => ({
-  rules: [],
-  balancers: [],
-  observatory: false,
-  burst: false,
-});
+const emptyImpact = (): DeletionImpact => ({ rules: [], balancers: [], observatory: false, burst: false });
 
 function ruleList(tt: XraySettingsValue): RuleObject[] {
   const r = tt.routing?.rules;
@@ -164,11 +159,7 @@ function applyCleanup(
     for (const outbound of tt.outbounds) {
       const sockopt = (outbound as { streamSettings?: { sockopt?: { dialerProxy?: string } } })
         ?.streamSettings?.sockopt;
-      if (
-        sockopt &&
-        typeof sockopt.dialerProxy === 'string' &&
-        removedOutbounds.has(sockopt.dialerProxy)
-      ) {
+      if (sockopt && typeof sockopt.dialerProxy === 'string' && removedOutbounds.has(sockopt.dialerProxy)) {
         delete sockopt.dialerProxy;
       }
     }

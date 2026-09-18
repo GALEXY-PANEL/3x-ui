@@ -2,7 +2,6 @@ package job
 
 import (
 	"encoding/json"
-	"time"
 
 	"github.com/GALEXY-PANEL/3x-ui/v3/internal/logger"
 	"github.com/GALEXY-PANEL/3x-ui/v3/internal/web/service"
@@ -29,40 +28,6 @@ type XrayTrafficJob struct {
 // refetch for the rest.
 const clientStatsSnapshotMaxClients = 5000
 
-// splitMovedClientTraffics keeps the rows that actually moved bytes this poll,
-// alongside the active-email list and set derived from the same pass.
-//
-// Xray reports a row for every known email whether or not it transferred
-// anything, so on a large panel nearly every delta is zero. The database writes
-// and the external-API inform consume the full slice before this point; the
-// WebSocket frame only feeds the dashboard's live speed column, where an absent
-// row and a zero row render identically. Broadcasting just the movers keeps that
-// frame from growing with the client count — at 5k clients it was carrying about
-// a megabyte of zeros every five seconds.
-func splitMovedClientTraffics(clientTraffics []*xray.ClientTraffic) ([]*xray.ClientTraffic, []string, map[string]bool) {
-	moved := make([]*xray.ClientTraffic, 0, len(clientTraffics))
-	emails := make([]string, 0, len(clientTraffics))
-	active := make(map[string]bool, len(clientTraffics))
-	for _, ct := range clientTraffics {
-		if ct == nil || ct.Up+ct.Down <= 0 {
-			continue
-		}
-		moved = append(moved, ct)
-		emails = append(emails, ct.Email)
-		active[ct.Email] = true
-	}
-	return moved, emails, active
-}
-
-const externalInformTimeout = 3 * time.Second
-
-var externalInformClient = &fasthttp.Client{
-	ReadTimeout:         externalInformTimeout,
-	WriteTimeout:        externalInformTimeout,
-	MaxIdleConnDuration: time.Minute,
-	MaxConnsPerHost:     4,
-}
-
 // NewXrayTrafficJob creates a new traffic collection job instance.
 func NewXrayTrafficJob() *XrayTrafficJob {
 	return new(XrayTrafficJob)
@@ -82,6 +47,18 @@ func (j *XrayTrafficJob) Run() {
 	needRestart0, clientsDisabled, err := j.inboundService.AddTraffic(traffics, clientTraffics)
 	if err != nil {
 		logger.Warning("add inbound traffic failed:", err)
+
+		if needRestart0 {
+			if repairErr := j.xrayService.RestartXray(true); repairErr != nil {
+				logger.Warning(
+					"repair xray after rolled-back disable transaction failed:",
+					repairErr,
+				)
+				j.xrayService.SetToNeedRestart()
+			} else {
+				needRestart0 = false
+			}
+		}
 	}
 	err, needRestart1 := j.outboundService.AddTraffic(traffics, clientTraffics)
 	if err != nil {
@@ -93,9 +70,15 @@ func (j *XrayTrafficJob) Run() {
 			logger.Warning("get RestartXrayOnClientDisable failed:", settingErr)
 		}
 		if restartOnDisable {
-			if err := j.xrayService.RestartXray(false); err != nil {
-				logger.Warning("reconcile xray after disabling clients failed:", err)
-				j.xrayService.SetToNeedRestart()
+			// RemoveUser has already updated the running HandlerService. Reconcile
+			// immediately so the Process config snapshot matches the real runtime;
+			// this normally hot-applies only the affected inbound and leaves the
+			// node-egress SOCKS listeners running.
+			if err := j.xrayService.ReconcileXray(); err != nil {
+				logger.Warning(
+					"reconcile xray after disabling clients failed:",
+					err,
+				)
 			}
 		}
 		websocket.BroadcastInvalidate(websocket.MessageTypeInbounds)
@@ -109,48 +92,56 @@ func (j *XrayTrafficJob) Run() {
 		j.xrayService.SetToNeedRestart()
 	}
 
-	// Derive the local online set from this poll's per-email deltas rather
-	// than the shared last_online column, which remote-node syncs also bump
-	// and would otherwise make a client active only on a remote node appear
-	// online on local inbounds.
-	movedTraffics, activeEmails, deltaActive := splitMovedClientTraffics(clientTraffics)
-	// When the core supports the online-stats API, union in connection-based
-	// onlines. Neither signal alone covers everything: an idle-but-connected
-	// client moves no bytes between polls (the delta heuristic's blind spot),
-	// while a short-lived connection can close before this poll yet still show
-	// in the delta. Older cores fall back to deltas alone.
-	if onlineUsers, apiMode, ouErr := j.xrayService.GetOnlineUsers(); ouErr != nil {
-		logger.Debug("get online users from xray api failed:", ouErr)
-	} else if apiMode {
-		idleOnline := make([]string, 0, len(onlineUsers))
-		for _, u := range onlineUsers {
-			if !deltaActive[u.Email] {
-				activeEmails = append(activeEmails, u.Email)
-				idleOnline = append(idleOnline, u.Email)
+	// Canonicalize runtime hmstat identities once per poll and reuse the result
+	// for presence, idle last-online maintenance, large-install row selection,
+	// and the websocket speed payload.
+	canonicalClientTraffics, canonicalErr := j.inboundService.CanonicalClientTrafficDeltas(clientTraffics)
+	if canonicalErr != nil {
+		logger.Warning("canonicalize client traffic deltas failed:", canonicalErr)
+		canonicalClientTraffics = clientTraffics
+	}
+	activeEmails, deltaActive := activeClientTrafficEmails(canonicalClientTraffics)
+
+	// The traffic path only bumps last_online on a non-zero delta. In exact mode
+	// compare canonical deltas only with the exact Xray set, excluding MTProto
+	// and other auxiliary clients. On a mapping error, skip the idle write rather
+	// than treating every connected client as idle.
+	if canonicalErr == nil {
+		if exactOnline, fresh := j.xrayService.GetFreshExactXrayOnlineClients(); fresh {
+			idleOnline := idleExactXrayClients(exactOnline, deltaActive)
+			if err := j.inboundService.BumpClientsLastOnline(idleOnline); err != nil {
+				logger.Warning("bump last online for connected clients failed:", err)
 			}
 		}
-		// The traffic path only bumps last_online on a non-zero delta; keep the
-		// column fresh for clients kept online purely by a live connection.
-		if err := j.inboundService.BumpClientsLastOnline(idleOnline); err != nil {
-			logger.Warning("bump last online for connected clients failed:", err)
-		}
 	}
+
 	// Pair the email signal with the inbound tags that moved bytes this poll.
 	// Xray's user>>>email counter aggregates across every inbound a client is
-	// attached to, so an online email alone can't say which inbound it used —
-	// gating the per-inbound view on these tags keeps a multi-inbound client
-	// off inbounds that saw no traffic. See issue #4859.
+	// attached to, so an online email alone can't say which inbound it used.
 	activeInboundTags := make([]string, 0, len(traffics))
 	for _, tr := range traffics {
 		if tr != nil && tr.IsInbound && tr.Up+tr.Down > 0 {
 			activeInboundTags = append(activeInboundTags, tr.Tag)
 		}
 	}
-	j.inboundService.RefreshLocalOnlineClients(activeEmails, activeInboundTags)
+	if canonicalErr == nil {
+		j.inboundService.RefreshCanonicalLegacyXrayOnlineClients(
+			activeEmails,
+			activeInboundTags,
+		)
+	} else {
+		rawActiveEmails, _ := activeClientTrafficEmails(clientTraffics)
+		j.inboundService.RefreshLegacyXrayOnlineClients(
+			rawActiveEmails,
+			activeInboundTags,
+		)
+	}
 
 	if !websocket.HasClients() {
 		return
 	}
+
+	clientSpeedTraffics := canonicalClientTraffics
 
 	// Small installs broadcast the full snapshot (see GetAllClientTraffics for
 	// why deltas alone left UI rows stale). Above the threshold the snapshot
@@ -197,7 +188,7 @@ func (j *XrayTrafficJob) Run() {
 	}
 	websocket.BroadcastTraffic(map[string]any{
 		"traffics":       traffics,
-		"clientTraffics": movedTraffics,
+		"clientTraffics": clientSpeedTraffics,
 		"onlineClients":  onlineClients,
 		"onlineByGuid":   j.inboundService.GetOnlineClientsByGuid(),
 		"activeInbounds": j.inboundService.GetActiveInboundsByGuid(),
@@ -224,10 +215,41 @@ func (j *XrayTrafficJob) Run() {
 	}
 }
 
-func (j *XrayTrafficJob) informTrafficToExternalAPI(inboundTraffics []*xray.Traffic, clientTraffics []*xray.ClientTraffic) {
-	if len(inboundTraffics) == 0 && len(clientTraffics) == 0 {
-		return
+func activeClientTrafficEmails(
+	traffics []*xray.ClientTraffic,
+) ([]string, map[string]struct{}) {
+	seen := make(map[string]struct{}, len(traffics))
+	active := make([]string, 0, len(traffics))
+	for _, traffic := range traffics {
+		if traffic == nil || traffic.Up+traffic.Down <= 0 || traffic.Email == "" {
+			continue
+		}
+		if _, duplicate := seen[traffic.Email]; duplicate {
+			continue
+		}
+		seen[traffic.Email] = struct{}{}
+		active = append(active, traffic.Email)
 	}
+	return active, seen
+}
+
+func idleExactXrayClients(
+	exactOnline []string,
+	deltaActive map[string]struct{},
+) []string {
+	idle := make([]string, 0, len(exactOnline))
+	for _, email := range exactOnline {
+		if email == "" {
+			continue
+		}
+		if _, active := deltaActive[email]; !active {
+			idle = append(idle, email)
+		}
+	}
+	return idle
+}
+
+func (j *XrayTrafficJob) informTrafficToExternalAPI(inboundTraffics []*xray.Traffic, clientTraffics []*xray.ClientTraffic) {
 	informURL, err := j.settingService.GetExternalTrafficInformURI()
 	if err != nil {
 		logger.Warning("get ExternalTrafficInformURI failed:", err)
@@ -249,10 +271,9 @@ func (j *XrayTrafficJob) informTrafficToExternalAPI(inboundTraffics []*xray.Traf
 	request.Header.SetContentType("application/json; charset=UTF-8")
 	request.SetBody(requestBody)
 	request.SetRequestURI(informURL)
-	request.Header.SetConnectionClose()
 	response := fasthttp.AcquireResponse()
 	defer fasthttp.ReleaseResponse(response)
-	if err := externalInformClient.DoTimeout(request, response, externalInformTimeout); err != nil {
+	if err := fasthttp.Do(request, response); err != nil {
 		logger.Warning("POST ExternalTrafficInformURI failed:", err)
 	}
 }

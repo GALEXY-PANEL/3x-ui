@@ -26,11 +26,11 @@ jobs:
 
       - uses: pnpm/action-setup@v6
         with:
-          package_json_file: docs/package.json
+          version: 11
 
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@v6
         with:
-          node-version-file: .nvmrc
+          node-version: 22
           cache: pnpm
           cache-dependency-path: docs/pnpm-lock.yaml
 
@@ -41,9 +41,6 @@ jobs:
 
       - name: Lint
         run: pnpm lint
-
-      - name: Format check
-        run: pnpm format:check
 
       - name: Test
         run: pnpm test

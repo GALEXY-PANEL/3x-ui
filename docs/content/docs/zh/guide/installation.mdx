@@ -1,10 +1,10 @@
 ---
 title: 安装
-description: 通过官方脚本（稳定版、指定版本或开发最新版）、无人值守 / cloud-init 或 Docker 安装 3x-ui，并选择 SQLite 或 PostgreSQL。
+description: 通过官方脚本（稳定版、指定版本或开发最新版）、无人值守 / cloud-init 或 Docker 安装 Heimdall，并选择 SQLite 或 PostgreSQL。
 icon: Download
 ---
 
-3x-ui 可运行在多种 Linux 发行版上——Ubuntu、Debian、Armbian、
+Heimdall 可运行在多种 Linux 发行版上——Ubuntu、Debian、Armbian、
 Fedora、CentOS、RHEL、AlmaLinux、Rocky Linux、Oracle Linux、Amazon Linux、
 Virtuozzo、Arch、Manjaro、openSUSE（Tumbleweed/Leap）、Alpine——以及 Windows，
 覆盖 `amd64`、`386`、`arm64`、`armv7`、`armv6`、`armv5` 和 `s390x` 架构。
@@ -22,20 +22,20 @@ Virtuozzo、Arch、Manjaro、openSUSE（Tumbleweed/Leap）、Alpine——以及 
 并安装 `x-ui` 管理命令。
 
 ```bash title="latest stable"
-bash <(curl -Ls https://raw.githubusercontent.com/GALEXY-PANEL/3x-ui/master/install.sh)
+bash <(curl -Ls https://raw.githubusercontent.com/GALEXY-PANEL/3x-ui/main/install.sh)
 ```
 
 在命令后附加标签即可安装**指定版本**：
 
 ```bash title="pinned version"
-bash <(curl -Ls https://raw.githubusercontent.com/GALEXY-PANEL/3x-ui/master/install.sh) v3.4.0
+bash <(curl -Ls https://raw.githubusercontent.com/GALEXY-PANEL/3x-ui/main/install.sh) v3.4.0
 ```
 
 传入 `dev-latest` 可安装滚动更新的**开发版**构建（来自 `main` 的最新逐提交预发布版本
 ——并非稳定版）：
 
 ```bash title="rolling dev build"
-bash <(curl -Ls https://raw.githubusercontent.com/GALEXY-PANEL/3x-ui/master/install.sh) dev-latest
+bash <(curl -Ls https://raw.githubusercontent.com/GALEXY-PANEL/3x-ui/main/install.sh) dev-latest
 ```
 
 安装完成后，记下打印出的登录信息并运行 `x-ui` 打开
@@ -60,23 +60,6 @@ docker compose up -d
 docker compose --profile postgres up -d
 ```
 
-更想用预构建镜像？它已发布到 GitHub Container Registry。该镜像内置了 Fail2ban（用于
-[IP 限制](/docs/operations/security)），其封禁通过 `iptables` 实现，因此需要 `NET_ADMIN`
-（IPv6 还需 `NET_RAW`）——
-否则封禁只会被记录，而不会实际生效：
-
-```bash title="docker run"
-docker run -d \
-  --cap-add=NET_ADMIN \
-  --cap-add=NET_RAW \
-  -e XUI_ENABLE_FAIL2BAN=true \
-  -v $PWD/db/:/etc/x-ui/ \
-  -v $PWD/cert/:/root/cert/ \
-  --network=host \
-  --restart=unless-stopped \
-  --name 3x-ui \
-  ghcr.io/GALEXY-PANEL/3x-ui:latest
-```
 
 `db/` 卷保存 SQLite 数据库（`/etc/x-ui/x-ui.db`），`cert/`
 保存 TLS 证书，因此你的数据可在升级后保留。
@@ -118,7 +101,7 @@ docker run -d \
 `/etc/x-ui/install-result.env`：
 
 ```bash
-XUI_NONINTERACTIVE=1 bash <(curl -Ls https://raw.githubusercontent.com/GALEXY-PANEL/3x-ui/master/install.sh)
+XUI_NONINTERACTIVE=1 bash <(curl -Ls https://raw.githubusercontent.com/GALEXY-PANEL/3x-ui/main/install.sh)
 ```
 
 仓库的 [`deploy/`](https://github.com/GALEXY-PANEL/3x-ui/tree/main/deploy)

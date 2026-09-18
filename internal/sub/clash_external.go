@@ -6,8 +6,11 @@ import (
 	"strings"
 )
 
-// clashProxyFromExternal converts a pasted share link into a mihomo/Clash proxy
-// entry, or nil when Clash can't represent it — the same gate getProxies runs.
+// clashProxyFromExternal parses a pasted share link and converts it into a
+// mihomo/Clash proxy entry named `name`. Returns nil for links Clash can't
+// represent (the entry is then skipped, mirroring how getProxies drops
+// unsupported inbound protocols). vmess/vless/trojan reuse the existing
+// applyTransport/applySecurity helpers; ss/hysteria2/wireguard map directly.
 func (s *SubClashService) clashProxyFromExternal(rawLink, name string) map[string]any {
 	ob := parseExternalLink(rawLink)
 	if ob == nil {
@@ -78,8 +81,7 @@ func (s *SubClashService) clashProxyFromExternal(rawLink, name string) map[strin
 		proxy["port"] = clashInt(server["port"])
 		proxy["cipher"] = method
 		proxy["password"] = fmt.Sprint(server["password"])
-		// No early return: the shared transport/security tail is what drops an
-		// obfs node Clash cannot express, exactly as buildProxy does for inbounds.
+		return proxy
 	case "hysteria":
 		return clashHysteriaFromExternal(settings, stream, name)
 	case "wireguard":

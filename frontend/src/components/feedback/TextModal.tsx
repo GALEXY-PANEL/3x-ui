@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Button, Input, Modal, Tabs, message } from 'antd';
 import { CopyOutlined, DownloadOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
@@ -22,25 +22,14 @@ interface TextModalProps {
   tabs?: TextModalTab[];
 }
 
-export default function TextModal({
-  open,
-  onClose,
-  title,
-  content,
-  fileName = '',
-  json = false,
-  tabs,
-}: TextModalProps) {
+export default function TextModal({ open, onClose, title, content, fileName = '', json = false, tabs }: TextModalProps) {
   const { t } = useTranslation();
   const [messageApi, messageContextHolder] = message.useMessage();
   const [activeKey, setActiveKey] = useState('');
 
-  // Reset on the way out so the next open starts on the first tab; activeTab
-  // falls back to tabs[0] whenever activeKey no longer matches.
-  const close = useCallback(() => {
-    setActiveKey('');
-    onClose();
-  }, [onClose]);
+  useEffect(() => {
+    if (open && tabs && tabs.length > 0) setActiveKey(tabs[0].key);
+  }, [open, tabs]);
 
   const activeTab = tabs?.find((tab) => tab.key === activeKey) ?? tabs?.[0];
   const activeContent = activeTab ? activeTab.content : content;
@@ -49,7 +38,7 @@ export default function TextModal({
     const ok = await ClipboardManager.copyText(activeContent || '');
     if (ok) {
       messageApi.success(t('copied'));
-      close();
+      onClose();
     }
   }
 
@@ -64,43 +53,38 @@ export default function TextModal({
       <Modal
         open={open}
         title={title}
-        onCancel={close}
+        onCancel={onClose}
         destroyOnHidden
-        footer={
-          <>
-            {fileName && (
-              <Button icon={<DownloadOutlined />} onClick={download}>
-                {fileName}
-              </Button>
-            )}
-            <Button type="primary" icon={<CopyOutlined />} onClick={copy}>
-              {t('copy')}
-            </Button>
-          </>
-        }
-      >
-        {tabs && tabs.length > 0 && (
-          <Tabs
-            activeKey={activeTab?.key}
-            onChange={setActiveKey}
-            items={tabs.map((tab) => ({ key: tab.key, label: tab.label }))}
-          />
-        )}
-        {json ? (
-          <JsonEditor value={activeContent} readOnly minHeight="240px" maxHeight="60vh" />
-        ) : (
-          <Input.TextArea
-            aria-label={title}
-            value={activeContent}
-            readOnly
-            autoSize={{ minRows: 10, maxRows: 20 }}
-            style={{
-              fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
-              fontSize: 12,
-              overflowY: 'auto',
-            }}
-          />
-        )}
+      footer={(
+        <>
+          {fileName && (
+            <Button icon={<DownloadOutlined />} onClick={download}>{fileName}</Button>
+          )}
+          <Button type="primary" icon={<CopyOutlined />} onClick={copy}>{t('copy')}</Button>
+        </>
+      )}
+    >
+      {tabs && tabs.length > 0 && (
+        <Tabs
+          activeKey={activeTab?.key}
+          onChange={setActiveKey}
+          items={tabs.map((tab) => ({ key: tab.key, label: tab.label }))}
+        />
+      )}
+      {json ? (
+        <JsonEditor value={activeContent} readOnly minHeight="240px" maxHeight="60vh" />
+      ) : (
+        <Input.TextArea
+          value={activeContent}
+          readOnly
+          autoSize={{ minRows: 10, maxRows: 20 }}
+          style={{
+            fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+            fontSize: 12,
+            overflowY: 'auto',
+          }}
+        />
+      )}
       </Modal>
     </>
   );

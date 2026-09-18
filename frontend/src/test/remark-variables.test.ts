@@ -17,9 +17,7 @@ describe('remark variables', () => {
   it('previewRemark substitutes known tokens and drops unknown', () => {
     expect(previewRemark('plain text')).toBe('plain text');
     expect(previewRemark('{{EMAIL}}')).toBe('john');
-    expect(previewRemark('{{EMAIL}} · {{TRAFFIC_LEFT}} · {{DAYS_LEFT}}d')).toBe(
-      'john · 41.60GB · 12d',
-    );
+    expect(previewRemark('{{EMAIL}} · {{TRAFFIC_LEFT}} · {{DAYS_LEFT}}d')).toBe('john · 41.60GB · 12d');
     expect(previewRemark('{{NOT_A_TOKEN}}')).toBe('');
   });
 
@@ -29,4 +27,9 @@ describe('remark variables', () => {
       expect(previewRemark(wrapToken(v.token))).toBe(v.sample);
     }
   });
+});
+
+
+it('previews the FACTOR remark variable', () => {
+  expect(previewRemark('{{FACTOR}}')).toBe('3x');
 });

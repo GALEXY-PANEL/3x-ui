@@ -1,6 +1,6 @@
 ---
 title: REALITY
-description: 在 3x-ui 中配合 XTLS-Vision 搭建 VLESS + REALITY 入站——密钥、short ID、SNI、指纹以及常见陷阱。
+description: 在 Heimdall 中配合 XTLS-Vision 搭建 VLESS + REALITY 入站——密钥、short ID、SNI、指纹以及常见陷阱。
 icon: ShieldCheck
 ---
 
@@ -12,7 +12,7 @@ REALITY 配合 **VLESS**（以及 Trojan）使用，推荐的流控为 `xtls-rpr
 
 ## 关键设置
 
-当你在某个 VLESS 入站上将安全模式选为 **REALITY** 时，3x-ui 会暴露以下字段：
+当你在某个 VLESS 入站上将安全模式选为 **REALITY** 时，Heimdall 会暴露以下字段：
 
 | 字段                     | 含义                                                               |
 | ------------------------ | ------------------------------------------------------------------ |
@@ -105,8 +105,6 @@ vless://<uuid>@<server>:443?security=reality&pbk=<public-key>&sid=<short-id>&sni
 - **SNI 不匹配。** SNI / server names 必须与目标站点的真实证书匹配，否则握手会暴露伪装。
 - **私钥泄露。** 永远只把**公钥**分发给客户端。
 - **流控设置错误。** REALITY + XTLS-Vision 要求在入站的客户端条目和分享链接上都设置 `flow = xtls-rprx-vision`。
-- **客户端版本限制。** Xray-core v26.9.8+ 在**最小客户端版本**留空时不再设置默认下限，但已明确保存的限制仍生效。较早的内核可能使用内置下限（如 `26.3.27`），导致第三方客户端即使密钥正确也被拒绝。修改前先核对运行中的内核版本；降低限制也会放行较旧的指纹。
-- **Mihomo 与 ML-KEM。** Xray-core v26.9.8+ 还独立要求 `X25519MLKEM768` key share 位于可选的 `X25519` 之前。Clash/Mihomo YAML 订阅会为 REALITY 节点（含外部链接）启用 `reality-opts.support-x25519mlkem768`，未设置指纹时使用 `chrome`。明确选择的指纹会保留，必须选择支持 ML-KEM 的指纹（Mihomo 使用 uTLS v1.8.7 时可选 `chrome`）；开关无法让旧指纹获得新能力。原始 `vless://` 链接不携带这个 Mihomo 配置项，直接导入时仍需持久覆写。对拒绝 ML-KEM 的很旧的 REALITY 服务端，需在客户端按节点将此项覆写为 `false`，或升级服务端。仅清空版本限制无法解决握手问题。
 
 </Callout>
 

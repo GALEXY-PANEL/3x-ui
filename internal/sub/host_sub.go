@@ -8,6 +8,7 @@ import (
 	"github.com/GALEXY-PANEL/3x-ui/v3/internal/database"
 	"github.com/GALEXY-PANEL/3x-ui/v3/internal/database/model"
 	"github.com/GALEXY-PANEL/3x-ui/v3/internal/logger"
+	"github.com/GALEXY-PANEL/3x-ui/v3/internal/profilefinalmask"
 )
 
 // hostEndpoints loads an inbound's enabled hosts for the given subscription
@@ -71,9 +72,6 @@ func hostToExternalProxyMap(h *model.Host, defaultDest string, defaultPort int) 
 	if h.Fingerprint != "" {
 		ep["fingerprint"] = h.Fingerprint
 	}
-	if h.CipherSuites != "" {
-		ep["cipherSuites"] = h.CipherSuites
-	}
 	if len(h.Alpn) > 0 {
 		ep["alpn"] = stringsToAnySlice(h.Alpn)
 	}
@@ -98,6 +96,18 @@ func hostToExternalProxyMap(h *model.Host, defaultDest string, defaultPort int) 
 	if h.MihomoIpVersion != "" {
 		ep["mihomoIpVersion"] = h.MihomoIpVersion
 	}
+	if len(h.ExcludeFromSubTypes) > 0 {
+		ep["excludeFromSubTypes"] = stringsToAnySlice(h.ExcludeFromSubTypes)
+	}
+	if h.VlessRoute != "" {
+		ep["vlessRoute"] = h.VlessRoute
+	}
+	if h.MihomoX25519 {
+		ep["mihomoX25519"] = true
+	}
+	if h.ShuffleHost {
+		ep["shuffleHost"] = true
+	}
 	if h.SockoptParams != "" {
 		ep["sockoptParams"] = h.SockoptParams
 	}
@@ -110,15 +120,45 @@ func hostToExternalProxyMap(h *model.Host, defaultDest string, defaultPort int) 
 	if h.VlessRoute != "" {
 		ep["vlessRoute"] = h.VlessRoute
 	}
-	if h.ServerDescription != "" {
-		ep["serverDescription"] = h.ServerDescription
-	}
 	return ep
+}
+
+// endpointExcludedFromSubType reports whether an externalProxy/profile endpoint
+// should be omitted from one subscription format ("raw", "json" or "clash").
+func endpointExcludedFromSubType(ep map[string]any, format string) bool {
+	if ep == nil || format == "" {
+		return false
+	}
+	value, ok := ep["excludeFromSubTypes"]
+	if !ok || value == nil {
+		return false
+	}
+	switch items := value.(type) {
+	case []any:
+		for _, item := range items {
+			if s, ok := item.(string); ok && s == format {
+				return true
+			}
+		}
+	case []string:
+		for _, s := range items {
+			if s == format {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // hostMuxOverride returns a host's muxParams when it is valid JSON, else "".
 // Used to override the JSON outbound's mux for that host.
 func hostMuxOverride(ep map[string]any) string {
+	if mux, ok := ep["mux"].(map[string]any); ok && len(mux) > 0 {
+		if data, err := json.Marshal(mux); err == nil {
+			return string(data)
+		}
+	}
+
 	mp, ok := ep["muxParams"].(string)
 	if ok && mp != "" && json.Valid([]byte(mp)) {
 		return mp
@@ -130,49 +170,61 @@ func hostMuxOverride(ep map[string]any) string {
 // per-host stream the JSON/Clash renderers build: sockoptParams (re-added since
 // the base stream strips sockopt) and finalMask. No-op for legacy externalProxy
 // entries (which never carry these keys), so existing output is unchanged.
+func clientSockoptOverride(value any) map[string]any {
+	sockopt, ok := value.(map[string]any)
+	if !ok || len(sockopt) == 0 {
+		return nil
+	}
+
+	cloned, _ := deepCloneJSON(sockopt).(map[string]any)
+	if cloned == nil {
+		return nil
+	}
+
+	delete(cloned, "acceptProxyProtocol")
+	delete(cloned, "V6Only")
+	delete(cloned, "trustedXForwardedFor")
+
+	if len(cloned) == 0 {
+		return nil
+	}
+	return cloned
+}
+
 func applyHostStreamOverrides(ep map[string]any, stream map[string]any) {
-	if hh, ok := ep["hostHeader"].(string); ok && hh != "" {
-		for _, key := range []string{"wsSettings", "httpupgradeSettings", "xhttpSettings"} {
-			if ts, ok := stream[key].(map[string]any); ok && ts != nil {
-				ts["host"] = hh
+	if sockopt := clientSockoptOverride(ep["sockopt"]); sockopt != nil {
+		stream["sockopt"] = sockopt
+	} else if sp, ok := ep["sockoptParams"].(string); ok && sp != "" {
+		var decoded map[string]any
+		if json.Unmarshal([]byte(sp), &decoded) == nil {
+			if sockopt := clientSockoptOverride(decoded); sockopt != nil {
+				stream["sockopt"] = sockopt
 			}
 		}
 	}
-	if p, ok := ep["path"].(string); ok && p != "" {
-		for _, key := range []string{"wsSettings", "httpupgradeSettings", "xhttpSettings"} {
-			if ts, ok := stream[key].(map[string]any); ok && ts != nil {
-				ts["path"] = p
-			}
+
+	if rawMasks, exists := ep["finalmask"]; exists {
+		// Explicit null/empty objects intentionally suppress the implicit mKCP
+		// compatibility default. Non-empty objects merge after global masks.
+		if masks, ok := rawMasks.(map[string]any); ok && len(masks) > 0 {
+			stream["finalmask"] = mergeFinalMask(
+				stream["finalmask"],
+				masks,
+			)
 		}
-	}
-	if sp, ok := ep["sockoptParams"].(string); ok && sp != "" {
-		var sockopt map[string]any
-		if json.Unmarshal([]byte(sp), &sockopt) == nil && len(sockopt) > 0 {
-			stream["sockopt"] = sockopt
-		}
-	}
-	// Host finalmask: merge the host's masks into the stream's finalmask (the
-	// JSON renderer consumes streamSettings["finalmask"]; clash ignores it).
-	if fm, ok := ep["finalMask"].(string); ok && fm != "" {
+	} else if fm, ok := ep["finalMask"].(string); ok && fm != "" {
 		var masks map[string]any
 		if json.Unmarshal([]byte(fm), &masks) == nil && len(masks) > 0 {
-			merged := mergeFinalMask(stream["finalmask"], masks)
-			if len(merged) > 0 {
-				stream["finalmask"] = merged
-			}
+			stream["finalmask"] = mergeFinalMask(
+				stream["finalmask"],
+				masks,
+			)
 		}
-	}
-	// Reality SNI override (host only): JSON realityData reads serverNames and
-	// clash reads serverName, so set both forms.
-	if isHostEndpoint(ep) {
-		if sec, _ := stream["security"].(string); sec == "reality" {
-			if rs, ok := stream["realitySettings"].(map[string]any); ok && rs != nil {
-				if sni, ok := externalProxySNI(ep); ok {
-					rs["serverName"] = sni
-					rs["serverNames"] = []any{sni}
-				}
-			}
-		}
+	} else if network, owns := profilefinalmask.ExplicitNetwork(ep); owns && network == "kcp" {
+		stream["finalmask"] = mergeFinalMask(
+			stream["finalmask"],
+			profilefinalmask.DefaultMKCPLegacy(),
+		)
 	}
 }
 

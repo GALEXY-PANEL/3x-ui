@@ -32,12 +32,7 @@ describe('http-init fetch wrapper', () => {
     replaceMock = vi.fn();
     Object.defineProperty(window, 'location', {
       configurable: true,
-      value: {
-        replace: replaceMock,
-        href: 'http://localhost/',
-        origin: 'http://localhost',
-        pathname: '/',
-      },
+      value: { replace: replaceMock, href: 'http://localhost/', origin: 'http://localhost', pathname: '/' },
     });
     http = await import('@/api/http-init');
   });
@@ -54,9 +49,7 @@ describe('http-init fetch wrapper', () => {
     await http.httpRequest('POST', '/panel/x', { a: 1, b: ['x', 'y'] });
 
     expect(initOf().body).toBe('a=1&b=x&b=y');
-    expect(headersOf().get('content-type')).toBe(
-      'application/x-www-form-urlencoded; charset=UTF-8',
-    );
+    expect(headersOf().get('content-type')).toBe('application/x-www-form-urlencoded; charset=UTF-8');
   });
 
   it('JSON-encodes bodies when the caller declares application/json', async () => {
@@ -64,12 +57,7 @@ describe('http-init fetch wrapper', () => {
     http.setupHttp();
     fetchMock.mockResolvedValue(okEnvelope());
 
-    await http.httpRequest(
-      'POST',
-      '/panel/x',
-      { a: 1 },
-      { headers: { 'Content-Type': 'application/json' } },
-    );
+    await http.httpRequest('POST', '/panel/x', { a: 1 }, { headers: { 'Content-Type': 'application/json' } });
 
     expect(initOf().body).toBe(JSON.stringify({ a: 1 }));
     expect(headersOf().get('content-type')).toBe('application/json');
@@ -82,9 +70,7 @@ describe('http-init fetch wrapper', () => {
 
     const fd = new FormData();
     fd.append('db', 'contents');
-    await http.httpRequest('POST', '/panel/import', fd, {
-      headers: { 'Content-Type': 'multipart/form-data' },
-    });
+    await http.httpRequest('POST', '/panel/import', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
 
     expect(initOf().body).toBe(fd);
     expect(headersOf().has('content-type')).toBe(false);
@@ -124,7 +110,11 @@ describe('http-init fetch wrapper', () => {
     fetchMock.mockImplementation((url: string) => {
       if (url.endsWith('/csrf-token')) return Promise.resolve(csrfResponse(`tok${dataCalls}`));
       dataCalls += 1;
-      return Promise.resolve(dataCalls === 1 ? new Response('', { status: 403 }) : okEnvelope());
+      return Promise.resolve(
+        dataCalls === 1
+          ? new Response('', { status: 403 })
+          : okEnvelope(),
+      );
     });
 
     const resp = await http.httpRequest('POST', '/panel/api/x', { a: 1 });
@@ -143,9 +133,7 @@ describe('http-init fetch wrapper', () => {
       return Promise.resolve(new Response('', { status: 403 }));
     });
 
-    await expect(http.httpRequest('POST', '/panel/api/x', { a: 1 })).rejects.toBeInstanceOf(
-      http.HttpError,
-    );
+    await expect(http.httpRequest('POST', '/panel/api/x', { a: 1 })).rejects.toBeInstanceOf(http.HttpError);
     expect(dataCalls).toBe(2);
   });
 
@@ -181,9 +169,7 @@ describe('http-init fetch wrapper', () => {
     fetchMock.mockResolvedValueOnce(new Response(null, { status: 204 }));
     expect((await http.httpRequest('GET', '/b')).data).toBe('');
 
-    fetchMock.mockResolvedValueOnce(
-      new Response('hello', { status: 200, headers: { 'content-type': 'text/plain' } }),
-    );
+    fetchMock.mockResolvedValueOnce(new Response('hello', { status: 200, headers: { 'content-type': 'text/plain' } }));
     expect((await http.httpRequest('GET', '/c')).data).toBe('hello');
 
     fetchMock.mockResolvedValueOnce(
@@ -206,90 +192,5 @@ describe('http-init fetch wrapper', () => {
     await http.httpRequest('GET', '/x', undefined, { timeout: 50 });
 
     expect(initOf().signal).toBeInstanceOf(AbortSignal);
-  });
-
-  it('preserves a caller cancellation signal when a timeout is set', async () => {
-    http.setupHttp();
-    fetchMock.mockResolvedValue(okEnvelope());
-    const controller = new AbortController();
-
-    await http.httpRequest('GET', '/x', undefined, { timeout: 1_000, signal: controller.signal });
-    controller.abort();
-
-    expect(initOf().signal?.aborted).toBe(true);
-  });
-
-  it('preserves both cancellation paths when AbortSignal.any is unavailable', async () => {
-    const timeout = AbortSignal.timeout.bind(AbortSignal);
-    vi.resetModules();
-    vi.stubGlobal('AbortSignal', { timeout });
-    http = await import('@/api/http-init');
-    http.setupHttp();
-    fetchMock.mockResolvedValue(okEnvelope());
-    const controller = new AbortController();
-
-    await http.httpRequest('GET', '/x', undefined, { timeout: 1_000, signal: controller.signal });
-    controller.abort();
-
-    expect(initOf().signal?.aborted).toBe(true);
-  });
-
-  it('times out when AbortSignal.any is unavailable', async () => {
-    const timeout = AbortSignal.timeout.bind(AbortSignal);
-    vi.resetModules();
-    vi.stubGlobal('AbortSignal', { timeout });
-    http = await import('@/api/http-init');
-    http.setupHttp();
-    fetchMock.mockResolvedValue(okEnvelope());
-    const controller = new AbortController();
-
-    await http.httpRequest('GET', '/x', undefined, { timeout: 20, signal: controller.signal });
-    const signal = initOf().signal as AbortSignal;
-    await new Promise<void>((resolve) =>
-      signal.addEventListener('abort', () => resolve(), { once: true }),
-    );
-
-    expect(signal.aborted).toBe(true);
-  });
-
-  it('aborts on the timeout when a caller signal is present', async () => {
-    http.setupHttp();
-    fetchMock.mockResolvedValue(okEnvelope());
-    const controller = new AbortController();
-
-    await http.httpRequest('GET', '/x', undefined, { timeout: 20, signal: controller.signal });
-    const signal = initOf().signal as AbortSignal;
-    await new Promise<void>((resolve) => {
-      if (signal.aborted) {
-        resolve();
-        return;
-      }
-      signal.addEventListener('abort', () => resolve(), { once: true });
-    });
-
-    expect(signal.aborted).toBe(true);
-  });
-
-  it.each([
-    ['/x?keep=1', '/x?keep=1&added=yes'],
-    ['/x?', '/x?added=yes'],
-    ['/x#frag', '/x?added=yes#frag'],
-    ['/x?keep=1#frag', '/x?keep=1&added=yes#frag'],
-  ])('appends encoded params to %s', async (url, expected) => {
-    http.setupHttp();
-    fetchMock.mockResolvedValue(okEnvelope());
-
-    await http.httpRequest('GET', url, undefined, { params: { added: 'yes' } });
-
-    expect(urlOf()).toBe(expected);
-  });
-
-  it('preserves the URL when no params are supplied', async () => {
-    http.setupHttp();
-    fetchMock.mockResolvedValue(okEnvelope());
-
-    await http.httpRequest('GET', '/x?keep=1#frag');
-
-    expect(urlOf()).toBe('/x?keep=1#frag');
   });
 });

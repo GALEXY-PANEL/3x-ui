@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Form, Input, InputNumber, Select, Switch } from 'antd';
 import { Controller, useFormContext, useWatch } from 'react-hook-form';
@@ -5,50 +6,81 @@ import { Controller, useFormContext, useWatch } from 'react-hook-form';
 import { FormField } from '@/components/form/rhf';
 import { SockoptCustomField } from '@/lib/xray/forms/fields';
 import { DOMAIN_STRATEGY_OPTION, TCP_CONGESTION_OPTION } from '@/schemas/primitives';
-import {
-  HappyEyeballsSchema,
-  SockoptStreamSettingsSchema,
-} from '@/schemas/protocols/stream/sockopt';
+import { HappyEyeballsSchema, SockoptStreamSettingsSchema } from '@/schemas/protocols/stream/sockopt';
 
 import { ADDRESS_PORT_STRATEGY_OPTIONS } from '../outbound-form-constants';
 
-interface SockoptFormProps {
-  outboundTags?: string[];
-  showDomainStrategy?: boolean;
+function SockoptFieldsContainer({
+  variant,
+  children,
+}: {
+  variant: 'default' | 'profile';
+  children: ReactNode;
+}) {
+  if (variant === 'profile') {
+    return (
+      <div className="ext-proxy-transport-option__content ext-proxy-profile-client-sockopt">
+        {children}
+      </div>
+    );
+  }
+  return <>{children}</>;
 }
 
-// Freedom's own card writes the strategy into this same sockopt key, so it hides
-// this field rather than letting two controls fight over one value.
 export default function SockoptForm({
   outboundTags = [],
-  showDomainStrategy = true,
-}: SockoptFormProps) {
+  variant = 'default',
+}: {
+  outboundTags?: string[];
+  variant?: 'default' | 'profile';
+}) {
   const { t } = useTranslation();
   const { control, setValue } = useFormContext();
   const sockopt = useWatch({ control, name: 'streamSettings.sockopt' });
   const hasSockopt = !!sockopt;
-  const dialerProxy = (useWatch({ control, name: 'streamSettings.sockopt.dialerProxy' }) ??
-    '') as string;
+  const dialerProxy = (useWatch({ control, name: 'streamSettings.sockopt.dialerProxy' }) ?? '') as string;
   const happyEyeballs = useWatch({ control, name: 'streamSettings.sockopt.happyEyeballs' });
   const hasHe = happyEyeballs != null;
   const dialerProxyOptions = Array.from(
     new Set([...outboundTags, dialerProxy].filter(Boolean)),
   ).map((tg) => ({ value: tg, label: tg }));
+  const toggle = (
+    <Switch
+      checked={hasSockopt}
+      onChange={(checked) => {
+        setValue(
+          'streamSettings.sockopt',
+          checked ? SockoptStreamSettingsSchema.parse({}) : undefined,
+        );
+      }}
+    />
+  );
+
   return (
     <>
-      <Form.Item label={t('pages.xray.outboundForm.sockopts')}>
-        <Switch
-          checked={hasSockopt}
-          onChange={(checked) => {
-            setValue(
-              'streamSettings.sockopt',
-              checked ? SockoptStreamSettingsSchema.parse({}) : undefined,
-            );
-          }}
-        />
-      </Form.Item>
+      {variant === 'profile' ? (
+        <div className="ext-proxy-field ext-proxy-transport-toggle ext-proxy-transport-toggle--client-sockopt">
+          <div className="ext-proxy-transport-toggle__copy">
+            <span className="ext-proxy-flabel ext-proxy-transport-toggle__label">
+              {t('pages.inbounds.form.profileClientSockopt', {
+                defaultValue: 'Client socket options',
+              })}
+            </span>
+            <span className="ext-proxy-fhint ext-proxy-transport-toggle__hint">
+              {t('pages.inbounds.form.profileClientSockoptHint', {
+                defaultValue: 'Configure outbound socket behavior.',
+              })}
+            </span>
+          </div>
+          <div className="ext-proxy-transport-toggle__control">{toggle}</div>
+        </div>
+      ) : (
+        <Form.Item label={t('pages.xray.outboundForm.sockopts')}>
+          {toggle}
+        </Form.Item>
+      )}
       {hasSockopt && (
-        <>
+        <SockoptFieldsContainer variant={variant}>
           <FormField
             label={t('pages.inbounds.form.dialerProxy')}
             name={['streamSettings', 'sockopt', 'dialerProxy']}
@@ -61,19 +93,17 @@ export default function SockoptForm({
               options={dialerProxyOptions}
             />
           </FormField>
-          {showDomainStrategy && (
-            <FormField
-              label={t('pages.xray.wireguard.domainStrategy')}
-              name={['streamSettings', 'sockopt', 'domainStrategy']}
-            >
-              <Select
-                options={Object.values(DOMAIN_STRATEGY_OPTION).map((v) => ({
-                  value: v,
-                  label: v,
-                }))}
-              />
-            </FormField>
-          )}
+          <FormField
+            label={t('pages.xray.wireguard.domainStrategy')}
+            name={['streamSettings', 'sockopt', 'domainStrategy']}
+          >
+            <Select
+              options={Object.values(DOMAIN_STRATEGY_OPTION).map((v) => ({
+                value: v,
+                label: v,
+              }))}
+            />
+          </FormField>
           <FormField
             label={t('pages.inbounds.form.addressPortStrategy')}
             name={['streamSettings', 'sockopt', 'addressPortStrategy']}
@@ -119,7 +149,10 @@ export default function SockoptForm({
           >
             <Input />
           </FormField>
-          <FormField label="TProxy" name={['streamSettings', 'sockopt', 'tproxy']}>
+          <FormField
+            label="TProxy"
+            name={['streamSettings', 'sockopt', 'tproxy']}
+          >
             <Select
               options={[
                 { value: 'off', label: 'off' },
@@ -211,7 +244,7 @@ export default function SockoptForm({
               <SockoptCustomField value={field.value} onChange={field.onChange} />
             )}
           />
-        </>
+        </SockoptFieldsContainer>
       )}
     </>
   );

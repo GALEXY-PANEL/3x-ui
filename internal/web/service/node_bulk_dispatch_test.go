@@ -2,13 +2,11 @@ package service
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"sync/atomic"
 	"testing"
 
 	"github.com/google/uuid"
-	"gorm.io/gorm"
 
 	"github.com/GALEXY-PANEL/3x-ui/v3/internal/database"
 	"github.com/GALEXY-PANEL/3x-ui/v3/internal/database/model"
@@ -18,15 +16,19 @@ import (
 // fakeNodeRuntime is a runtime.Runtime stub that counts the per-client dispatch
 // calls so a test can assert a bulk op does NOT stream one RPC per client.
 type fakeNodeRuntime struct {
-	addInbound    atomic.Int32
-	delInbound    atomic.Int32
-	addClient     atomic.Int32
-	deleteClient  atomic.Int32
-	deleteUser    atomic.Int32
-	updateInbound atomic.Int32
-	updateSubSort atomic.Int32
-	updateUser    atomic.Int32
+	addInbound        atomic.Int32
+	delInbound        atomic.Int32
+	addClient         atomic.Int32
+	deleteClient      atomic.Int32
+	deleteClientBatch atomic.Int32
+	deleteUser        atomic.Int32
+	updateInbound     atomic.Int32
+	updateUser        atomic.Int32
+	deleteClientErr   error
 }
+
+var _ runtime.Runtime = (*fakeNodeRuntime)(nil)
+var _ remoteClientDeleter = (*fakeNodeRuntime)(nil)
 
 func (f *fakeNodeRuntime) Name() string { return "fake-node" }
 
@@ -42,11 +44,6 @@ func (f *fakeNodeRuntime) DelInbound(context.Context, *model.Inbound) error {
 
 func (f *fakeNodeRuntime) UpdateInbound(context.Context, *model.Inbound, *model.Inbound) error {
 	f.updateInbound.Add(1)
-	return nil
-}
-
-func (f *fakeNodeRuntime) SetInboundSubSortIndex(context.Context, *model.Inbound, int) error {
-	f.updateSubSort.Add(1)
 	return nil
 }
 
@@ -66,9 +63,19 @@ func (f *fakeNodeRuntime) DeleteUser(context.Context, *model.Inbound, string) er
 
 func (f *fakeNodeRuntime) DeleteClient(context.Context, string) error {
 	f.deleteClient.Add(1)
-	return nil
+	return f.deleteClientErr
 }
 
+func (f *fakeNodeRuntime) DeleteClientRecord(context.Context, string, bool) error {
+	f.deleteClient.Add(1)
+	return f.deleteClientErr
+}
+
+func (f *fakeNodeRuntime) DeleteClientRecords(_ context.Context, emails []string, _ bool) error {
+	f.deleteClientBatch.Add(1)
+	f.deleteClient.Add(int32(len(emails)))
+	return f.deleteClientErr
+}
 func (f *fakeNodeRuntime) AddClient(context.Context, *model.Inbound, model.Client) error {
 	f.addClient.Add(1)
 	return nil
@@ -80,38 +87,15 @@ func (f *fakeNodeRuntime) ResetClientTraffic(context.Context, *model.Inbound, st
 func (f *fakeNodeRuntime) ResetInboundTraffic(context.Context, *model.Inbound) error { return nil }
 func (f *fakeNodeRuntime) ResetAllTraffics(context.Context) error                    { return nil }
 
-// startSerializedWriter runs the single traffic-writer goroutine for the test, so
-// concurrent service writes take the serialized path production uses.
-func startSerializedWriter(t *testing.T) {
-	t.Helper()
-	resetTrafficWriterForTest(t)
-	StartTrafficWriter()
-}
-
-// useTestRuntimeManager swaps in a fresh runtime.Manager for the test and puts
-// the previous one back afterwards, so overrides can't leak between tests.
-func useTestRuntimeManager(t *testing.T) *runtime.Manager {
+// setupNodeRuntime wires an online node + a fake runtime override and returns the
+// node id and the fake so a test can drive the service node-dispatch path without
+// a network node.
+func setupNodeRuntime(t *testing.T) (int, *fakeNodeRuntime) {
 	t.Helper()
 	prev := runtime.GetManager()
 	mgr := runtime.NewManager(runtime.LocalDeps{APIPort: func() int { return 0 }, SetNeedRestart: func() {}})
 	runtime.SetManager(mgr)
 	t.Cleanup(func() { runtime.SetManager(prev) })
-	return mgr
-}
-
-// panicNodeRuntime panics on the per-client push, standing in for a bug in the
-// apply path that would otherwise unwind straight out of a fanout goroutine.
-type panicNodeRuntime struct{ fakeNodeRuntime }
-
-func (p *panicNodeRuntime) AddClient(context.Context, *model.Inbound, model.Client) error {
-	panic("boom from node runtime")
-}
-
-// setupNodeRuntime wires an online node + a fake runtime override so a test can
-// drive the service node-dispatch path without a network node.
-func setupNodeRuntime(t *testing.T) (int, *fakeNodeRuntime) {
-	t.Helper()
-	mgr := useTestRuntimeManager(t)
 
 	node := &model.Node{Name: "n1-" + t.Name(), Address: "127.0.0.1", Port: 2096, ApiToken: "tok", Enable: true, Status: "online"}
 	if err := database.GetDB().Create(node).Error; err != nil {
@@ -193,195 +177,6 @@ func TestNodeBulk_SmallAddPushesLive(t *testing.T) {
 	}
 	if got := fake.addClient.Load(); got != int32(small) {
 		t.Fatalf("small add streamed %d AddClient RPCs, want %d", got, small)
-	}
-}
-
-func TestNodeBulkAdjustDoesNotPushBeforeFailedCommit(t *testing.T) {
-	setupBulkDB(t)
-	nodeID, fake := setupNodeRuntime(t)
-	client := model.Client{
-		ID:         uuid.NewString(),
-		Email:      "txfail-adjust@x",
-		Enable:     true,
-		ExpiryTime: 1_900_000_000_000,
-	}
-	nodeInbound(t, nodeID, 30022, []model.Client{client})
-
-	db := database.GetDB()
-	const callbackName = "bulk-adjust:fail-inbound-update"
-	if err := db.Callback().Update().After("gorm:update").Register(callbackName, func(tx *gorm.DB) {
-		if tx.Statement != nil && tx.Statement.Table == "inbounds" {
-			tx.AddError(errors.New("injected bulk-adjust transaction failure"))
-		}
-	}); err != nil {
-		t.Fatalf("register callback: %v", err)
-	}
-	t.Cleanup(func() { _ = db.Callback().Update().Remove(callbackName) })
-
-	result, _, err := (&ClientService{}).BulkAdjust(&InboundService{}, []string{client.Email}, 1, 0, "", nil, "")
-	if err != nil {
-		t.Fatalf("BulkAdjust: %v", err)
-	}
-	if result.Adjusted != 0 || len(result.Skipped) != 1 {
-		t.Fatalf("BulkAdjust result = %+v, want one skipped client after injected failure", result)
-	}
-	if got := fake.updateUser.Load(); got != 0 {
-		t.Fatalf("failed transaction pushed %d UpdateUser call(s) to the node, want 0", got)
-	}
-}
-
-func TestNodeBulkDeleteDoesNotPushBeforeFailedCommit(t *testing.T) {
-	setupBulkDB(t)
-	nodeID, fake := setupNodeRuntime(t)
-	client := model.Client{ID: uuid.NewString(), Email: "txfail-delete@x", Enable: true}
-	nodeInbound(t, nodeID, 30023, []model.Client{client})
-
-	db := database.GetDB()
-	const callbackName = "bulk-delete:fail-inbound-update"
-	if err := db.Callback().Update().After("gorm:update").Register(callbackName, func(tx *gorm.DB) {
-		if tx.Statement != nil && tx.Statement.Table == "inbounds" {
-			tx.AddError(errors.New("injected bulk-delete transaction failure"))
-		}
-	}); err != nil {
-		t.Fatalf("register callback: %v", err)
-	}
-	t.Cleanup(func() { _ = db.Callback().Update().Remove(callbackName) })
-
-	result, _, err := (&ClientService{}).BulkDelete(&InboundService{}, []string{client.Email}, true)
-	if err != nil {
-		t.Fatalf("BulkDelete: %v", err)
-	}
-	if result.Deleted != 0 || len(result.Skipped) != 1 {
-		t.Fatalf("BulkDelete result = %+v, want one skipped client after injected failure", result)
-	}
-	if got := fake.deleteClient.Load() + fake.deleteUser.Load(); got != 0 {
-		t.Fatalf("failed transaction pushed %d delete call(s) to the node, want 0", got)
-	}
-	if isClientEmailTombstoned(client.Email) {
-		t.Fatal("failed bulk delete left a live tombstone")
-	}
-}
-
-func TestNodeBulkSmallDeleteRemovesWholeRemoteClient(t *testing.T) {
-	setupBulkDB(t)
-	nodeID, fake := setupNodeRuntime(t)
-	client := model.Client{ID: uuid.NewString(), Email: "full-delete@x", Enable: true}
-	nodeInbound(t, nodeID, 30024, []model.Client{client})
-	var record model.ClientRecord
-	if err := database.GetDB().Where("email = ?", client.Email).First(&record).Error; err != nil {
-		t.Fatalf("load client record: %v", err)
-	}
-
-	result, _, err := (&ClientService{}).BulkDelete(&InboundService{}, []string{client.Email}, true)
-	if err != nil {
-		t.Fatalf("BulkDelete: %v", err)
-	}
-	if result.Deleted != 1 || len(result.Skipped) != 0 {
-		t.Fatalf("BulkDelete result = %+v, want one deleted client", result)
-	}
-	if got := fake.deleteClient.Load(); got != 1 {
-		t.Fatalf("remote DeleteClient calls = %d, want 1", got)
-	}
-	if got := fake.deleteUser.Load(); got != 0 {
-		t.Fatalf("remote DeleteUser detach calls = %d, want 0 for full deletion", got)
-	}
-	var records, links int64
-	if err := database.GetDB().Model(&model.ClientRecord{}).Where("email = ?", client.Email).Count(&records).Error; err != nil {
-		t.Fatalf("count client records: %v", err)
-	}
-	if err := database.GetDB().Model(&model.ClientInbound{}).Where("client_id = ?", record.Id).Count(&links).Error; err != nil {
-		t.Fatalf("count client links: %v", err)
-	}
-	if records != 0 || links != 0 {
-		t.Fatalf("bulk delete left records=%d links=%d, want 0/0", records, links)
-	}
-}
-
-func TestNodeBulkDeleteTreatsMissingSettingsClientAsAlreadyDeleted(t *testing.T) {
-	setupBulkDB(t)
-	nodeID, fake := setupNodeRuntime(t)
-	client := model.Client{ID: uuid.NewString(), Email: "drifted-delete@x", Enable: true}
-	ib := nodeInbound(t, nodeID, 30025, []model.Client{client})
-
-	// Simulate a stale normalized link after the client has already disappeared
-	// from the inbound settings JSON.
-	if err := database.GetDB().Model(&model.Inbound{}).Where("id = ?", ib.Id).
-		Update("settings", clientsSettings(t, nil)).Error; err != nil {
-		t.Fatalf("drift inbound settings: %v", err)
-	}
-
-	result, _, err := (&ClientService{}).BulkDelete(&InboundService{}, []string{client.Email}, true)
-	if err != nil {
-		t.Fatalf("BulkDelete: %v", err)
-	}
-	if result.Deleted != 1 || len(result.Skipped) != 0 {
-		t.Fatalf("BulkDelete result = %+v, want one deleted client", result)
-	}
-	if got := fake.deleteClient.Load(); got != 1 {
-		t.Fatalf("remote DeleteClient calls = %d, want 1", got)
-	}
-	var records, links int64
-	if err := database.GetDB().Model(&model.ClientRecord{}).Where("email = ?", client.Email).Count(&records).Error; err != nil {
-		t.Fatalf("count client records: %v", err)
-	}
-	if err := database.GetDB().Model(&model.ClientInbound{}).Where("inbound_id = ?", ib.Id).Count(&links).Error; err != nil {
-		t.Fatalf("count client links: %v", err)
-	}
-	if records != 0 || links != 0 {
-		t.Fatalf("bulk delete left records=%d links=%d, want 0/0", records, links)
-	}
-	if !isClientEmailTombstoned(client.Email) {
-		t.Fatal("successful bulk delete withdrew the client tombstone")
-	}
-	t.Cleanup(func() { withdrawClientTombstones(client.Email) })
-}
-
-func TestNodeBulkDeleteCompletesAcrossPresentAndMissingSettings(t *testing.T) {
-	setupBulkDB(t)
-	nodeID, fake := setupNodeRuntime(t)
-	client := model.Client{ID: uuid.NewString(), Email: "mixed-delete@x", Enable: true}
-	drifted := nodeInbound(t, nodeID, 30026, []model.Client{client})
-	nodeInbound(t, nodeID, 30027, []model.Client{client})
-
-	if err := database.GetDB().Model(&model.Inbound{}).Where("id = ?", drifted.Id).
-		Update("settings", clientsSettings(t, nil)).Error; err != nil {
-		t.Fatalf("drift inbound settings: %v", err)
-	}
-
-	result, _, err := (&ClientService{}).BulkDelete(&InboundService{}, []string{client.Email}, true)
-	if err != nil {
-		t.Fatalf("BulkDelete: %v", err)
-	}
-	if result.Deleted != 1 || len(result.Skipped) != 0 {
-		t.Fatalf("BulkDelete result = %+v, want one deleted client", result)
-	}
-	if got := fake.deleteClient.Load(); got != 2 {
-		t.Fatalf("remote DeleteClient calls = %d, want one per node inbound", got)
-	}
-}
-
-func TestNodeBulkDeleteMalformedSettingsWithdrawsTombstone(t *testing.T) {
-	setupBulkDB(t)
-	nodeID, fake := setupNodeRuntime(t)
-	client := model.Client{ID: uuid.NewString(), Email: "malformed-delete@x", Enable: true}
-	ib := nodeInbound(t, nodeID, 30028, []model.Client{client})
-	if err := database.GetDB().Model(&model.Inbound{}).Where("id = ?", ib.Id).
-		Update("settings", `{"clients":[`).Error; err != nil {
-		t.Fatalf("break inbound settings: %v", err)
-	}
-
-	result, _, err := (&ClientService{}).BulkDelete(&InboundService{}, []string{client.Email}, true)
-	if err != nil {
-		t.Fatalf("BulkDelete: %v", err)
-	}
-	if result.Deleted != 0 || len(result.Skipped) != 1 {
-		t.Fatalf("BulkDelete result = %+v, want one skipped client", result)
-	}
-	if got := fake.deleteClient.Load() + fake.deleteUser.Load(); got != 0 {
-		t.Fatalf("malformed settings pushed %d delete call(s) to the node, want 0", got)
-	}
-	if isClientEmailTombstoned(client.Email) {
-		t.Fatal("failed bulk delete left a live tombstone")
 	}
 }
 
@@ -479,13 +274,96 @@ func TestNodeBulk_LargeDeleteFoldsToDirty(t *testing.T) {
 		t.Fatalf("BulkDelete: %v", err)
 	}
 
-	if got := fake.deleteClient.Load() + fake.deleteUser.Load(); got != 0 {
-		t.Fatalf("large delete streamed %d delete RPCs, want 0 (should fold to dirty)", got)
+	if got := fake.deleteUser.Load(); got != 0 {
+		t.Fatalf("large delete streamed %d DeleteUser RPCs, want 0 (should fold to dirty)", got)
 	}
 	if _, _, dirty, _, err := (&NodeService{}).NodeSyncState(nodeID); err != nil {
 		t.Fatalf("NodeSyncState: %v", err)
 	} else if !dirty {
 		t.Fatal("large delete must mark the node dirty")
+	}
+}
+
+func TestAttachDisabledClientPreservesStateAndSkipsIncrementalNodePush(t *testing.T) {
+	setupBulkDB(t)
+	nodeID, fake := setupNodeRuntime(t)
+	target := nodeInbound(t, nodeID, 30004, nil)
+
+	clientSvc := &ClientService{}
+	inboundSvc := &InboundService{}
+	email := "disabled-attach@x"
+	client := model.Client{
+		ID:     uuid.NewString(),
+		Email:  email,
+		SubID:  "disabled-attach",
+		Enable: false,
+	}
+	source := mkInbound(t, 30005, model.VLESS, clientsSettings(t, []model.Client{client}))
+	if err := clientSvc.SyncInbound(nil, source.Id, []model.Client{client}); err != nil {
+		t.Fatalf("seed source SyncInbound: %v", err)
+	}
+	forceRecordDisabled(t, clientSvc, email)
+	mkTraffic(t, source.Id, email, 0, 0, 0, 0, false)
+
+	record, err := clientSvc.GetRecordByEmail(nil, email)
+	if err != nil {
+		t.Fatalf("GetRecordByEmail: %v", err)
+	}
+	if _, err := clientSvc.Attach(inboundSvc, record.Id, []int{target.Id}); err != nil {
+		t.Fatalf("Attach: %v", err)
+	}
+
+	if got := fake.addClient.Load(); got != 0 {
+		t.Fatalf("disabled attach sent %d incremental AddClient RPCs, want 0", got)
+	}
+	if got := jsonClientEnable(t, inboundSvc, target.Id, email); got {
+		t.Fatal("disabled canonical state was resurrected in target inbound JSON")
+	}
+	if _, _, dirty, _, err := (&NodeService{}).NodeSyncState(nodeID); err != nil {
+		t.Fatalf("NodeSyncState: %v", err)
+	} else if !dirty {
+		t.Fatal("disabled attach must leave a durable full-reconcile request")
+	}
+}
+
+func TestBulkAttachDisabledClientPreservesStateAndSkipsIncrementalNodePush(t *testing.T) {
+	setupBulkDB(t)
+	nodeID, fake := setupNodeRuntime(t)
+	target := nodeInbound(t, nodeID, 30006, nil)
+
+	clientSvc := &ClientService{}
+	inboundSvc := &InboundService{}
+	email := "disabled-bulk-attach@x"
+	client := model.Client{
+		ID:     uuid.NewString(),
+		Email:  email,
+		SubID:  "disabled-bulk-attach",
+		Enable: false,
+	}
+	source := mkInbound(t, 30007, model.VLESS, clientsSettings(t, []model.Client{client}))
+	if err := clientSvc.SyncInbound(nil, source.Id, []model.Client{client}); err != nil {
+		t.Fatalf("seed source SyncInbound: %v", err)
+	}
+	forceRecordDisabled(t, clientSvc, email)
+	mkTraffic(t, source.Id, email, 0, 0, 0, 0, false)
+
+	result, _, err := clientSvc.BulkAttach(inboundSvc, []string{email}, []int{target.Id})
+	if err != nil {
+		t.Fatalf("BulkAttach: %v", err)
+	}
+	if len(result.Errors) != 0 {
+		t.Fatalf("BulkAttach errors: %v", result.Errors)
+	}
+	if got := fake.addClient.Load(); got != 0 {
+		t.Fatalf("disabled bulk attach sent %d incremental AddClient RPCs, want 0", got)
+	}
+	if got := jsonClientEnable(t, inboundSvc, target.Id, email); got {
+		t.Fatal("disabled canonical state was resurrected by BulkAttach")
+	}
+	if _, _, dirty, _, err := (&NodeService{}).NodeSyncState(nodeID); err != nil {
+		t.Fatalf("NodeSyncState: %v", err)
+	} else if !dirty {
+		t.Fatal("disabled BulkAttach must leave a durable full-reconcile request")
 	}
 }
 

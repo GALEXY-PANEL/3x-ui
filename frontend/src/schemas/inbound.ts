@@ -1,20 +1,16 @@
 import { z } from 'zod';
 
-export const SlimInboundSchema = z
-  .object({
-    id: z.number(),
-    protocol: z.string(),
-  })
-  .loose();
+export const SlimInboundSchema = z.object({
+  id: z.number(),
+  protocol: z.string(),
+}).loose();
 
 export const SlimInboundListSchema = z.array(SlimInboundSchema);
 
-export const InboundDetailSchema = z
-  .object({
-    id: z.number(),
-    protocol: z.string(),
-  })
-  .loose();
+export const InboundDetailSchema = z.object({
+  id: z.number(),
+  protocol: z.string(),
+}).loose();
 
 export const LastOnlineMapSchema = z.record(z.string(), z.number());
 

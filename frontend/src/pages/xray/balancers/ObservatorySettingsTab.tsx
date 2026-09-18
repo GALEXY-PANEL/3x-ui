@@ -2,7 +2,6 @@ import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Alert, Empty, Input, InputNumber, Select, Space, Switch, Tag } from 'antd';
 
-import { onNumber } from '@/utils/onNumber';
 import { SettingListItem } from '@/components/ui';
 import {
   BurstObservatorySchema,
@@ -33,11 +32,7 @@ function SelectorTags({ tags }: { tags: string[] }) {
   return (
     <>
       {tags.map((sel) => (
-        <Tag
-          key={sel}
-          className="info-large-tag"
-          style={{ margin: 0, marginRight: 4, marginBottom: 4 }}
-        >
+        <Tag key={sel} className="info-large-tag" style={{ margin: 0, marginRight: 4, marginBottom: 4 }}>
           {sel}
         </Tag>
       ))}
@@ -61,20 +56,16 @@ export default function ObservatorySettingsTab({
     const raw = templateSettings?.burstObservatory;
     if (raw == null) return null;
     const merged = { ...BURST_DEFAULTS, ...asObject(raw) } as BurstObservatoryObject;
-    merged.pingConfig = {
-      ...BURST_DEFAULTS.pingConfig,
-      ...asObject(merged.pingConfig),
-    } as PingConfigObject;
+    merged.pingConfig = { ...BURST_DEFAULTS.pingConfig, ...asObject(merged.pingConfig) } as PingConfigObject;
     return merged;
   }, [templateSettings?.burstObservatory]);
 
   const hasObservatory = observatory != null;
   const hasBurst = burst != null;
   const hasMixedObservers = hasObservatory && hasBurst;
-  const activeView =
-    hasBurst && (!hasObservatory || settingsRequireBurstObservatory(templateSettings))
-      ? 'burstObservatory'
-      : 'observatory';
+  const activeView = hasBurst && (!hasObservatory || settingsRequireBurstObservatory(templateSettings))
+    ? 'burstObservatory'
+    : 'observatory';
 
   function patchObservatory(patch: Partial<ObservatoryObject>) {
     mutate((tt) => {
@@ -204,7 +195,7 @@ export default function ObservatorySettingsTab({
         <InputNumber
           min={1}
           value={burst.pingConfig.sampling}
-          onChange={onNumber((v) => patchPingConfig({ sampling: v }))}
+          onChange={(v) => patchPingConfig({ sampling: typeof v === 'number' ? v : burst.pingConfig.sampling })}
           style={{ width: '100%' }}
         />
       </SettingListItem>
@@ -227,7 +218,11 @@ export default function ObservatorySettingsTab({
     <Space orientation="vertical" size="middle" style={{ width: '100%' }}>
       <Alert type="info" showIcon title={t('pages.xray.observatory.autoManaged')} />
       {hasMixedObservers && (
-        <Alert type="warning" showIcon title={t('pages.xray.observatory.mixedLegacy')} />
+        <Alert
+          type="warning"
+          showIcon
+          title={t('pages.xray.observatory.mixedLegacy')}
+        />
       )}
       <div>{activeView === 'observatory' ? observatorySection : burstSection}</div>
     </Space>

@@ -25,7 +25,10 @@ const DISABLED_STROKE = {
 
 const UNLIMITED_STROKE = '#722ed1';
 
-export function computeTrafficDisplay(input: TrafficDisplayInput, isDark: boolean): TrafficDisplay {
+export function computeTrafficDisplay(
+  input: TrafficDisplayInput,
+  isDark: boolean,
+): TrafficDisplay {
   const up = input.up || 0;
   const down = input.down || 0;
   const used = up + down;

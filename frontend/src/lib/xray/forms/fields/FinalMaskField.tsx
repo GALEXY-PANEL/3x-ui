@@ -14,19 +14,11 @@ interface FinalMaskFieldProps {
 
 const EMPTY: FinalMaskStreamSettings = { tcp: [], udp: [] };
 
-export default function FinalMaskField({
-  value,
-  onChange,
-  network,
-  protocol,
-  showAll,
-}: FinalMaskFieldProps) {
+export default function FinalMaskField({ value, onChange, network, protocol, showAll }: FinalMaskFieldProps) {
   const [form] = Form.useForm();
   const [initial] = useState(() => value ?? EMPTY);
   const onChangeRef = useRef(onChange);
-  useEffect(() => {
-    onChangeRef.current = onChange;
-  });
+  onChangeRef.current = onChange;
   const lastEmitted = useRef(JSON.stringify(initial));
 
   const finalmask = Form.useWatch('finalmask', form) as FinalMaskStreamSettings | undefined;
@@ -49,13 +41,7 @@ export default function FinalMaskField({
       labelWrap
       initialValues={{ finalmask: initial }}
     >
-      <FinalMaskForm
-        name="finalmask"
-        network={network}
-        protocol={protocol}
-        form={form}
-        showAll={showAll}
-      />
+      <FinalMaskForm name="finalmask" network={network} protocol={protocol} form={form} showAll={showAll} />
     </Form>
   );
 }

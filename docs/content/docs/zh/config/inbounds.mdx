@@ -1,6 +1,6 @@
 ---
 title: 入站与协议
-description: 在 3x-ui 中创建入站——协议、传输方式、流量重置与到期，以及在同一端口上服务多种协议的回落（fallback）。
+description: 在 Heimdall 中创建入站——协议、传输方式、流量重置与到期，以及在同一端口上服务多种协议的回落（fallback）。
 icon: ArrowDownToLine
 ---
 
@@ -37,9 +37,6 @@ icon: ArrowDownToLine
 
 可选地为入站设置总流量上限和到期日期，并选择一个周期性的**流量重置**计划：
 `never`（默认）、`hourly`、`daily`、`weekly` 或 `monthly`。
-
-选择 `monthly` 时，可以指定每月 1 至 31 日重置。如果当月没有指定日期，
-则在该月最后一天重置。
 </Step>
 
 </Steps>
@@ -55,13 +52,11 @@ icon: ArrowDownToLine
 | **Trojan**             | 基于 TLS；支持 XTLS 和回落。                                              |
 | **Shadowsocks**        | 包含 Shadowsocks-2022（`2022-blake3-*`）加密方式。                        |
 | **WireGuard**          | 现代隧道协议。                                                            |
-| **AmneziaWG**          | 混淆版 WireGuard 分支，直接内置在面板进程中。参见 [AmneziaWG](/docs/config/amneziawg)。 |
 | **Hysteria2**          | 选择为 `hysteria`；面板生成 `hysteria2://` 链接。                         |
 | **HTTP**               | HTTP 代理。                                                               |
 | **Mixed (SOCKS/HTTP)** | SOCKS + HTTP 的组合监听器。                                               |
 | **Dokodemo-door / Tunnel** | 端口转发 / 流量重定向。                                               |
 | **MTProto**            | Telegram MTProto 代理，由内置的 `mtg` 进程提供（而非 Xray）。             |
-| **TUIC**               | 基于 QUIC 的代理协议（v5），由内置的 `tuic-server` 进程提供。参见 [TUIC](/docs/config/tuic)。 |
 
 <Callout type="info">
   在内部，Hysteria2 并不是一个独立的协议——它是把传输版本设为 2 的 `hysteria`
@@ -71,7 +66,7 @@ icon: ArrowDownToLine
 ## 回落——在同一端口上服务多种协议
 
 回落（fallback）让单个 TLS 端口（例如 `443`）可以服务不止一种协议——例如同时服务
-VLESS **和** Trojan——方法是将无法匹配的握手路由到子入站。在 3x-ui 中，回落是在
+VLESS **和** Trojan——方法是将无法匹配的握手路由到子入站。在 Heimdall 中，回落是在
 面板里管理的（主入站的 **Fallbacks** 列表），而不是手写进 JSON。
 
 只有当主入站满足以下条件时，回落才可用：

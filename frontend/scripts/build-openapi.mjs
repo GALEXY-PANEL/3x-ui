@@ -1,17 +1,13 @@
 #!/usr/bin/env node
+import { log } from 'node:console';
 import { writeFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
+import process from 'node:process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { sections } from '../src/pages/api-docs/endpoints.ts';
-import {
-  buildWebSocketEvents,
-  websocketEnvelopeSchema,
-} from '../src/pages/api-docs/websocket-events.ts';
 import { EXAMPLES } from '../src/generated/examples.ts';
 import { SCHEMAS } from '../src/generated/schemas.ts';
-
-const websocketEvents = buildWebSocketEvents(EXAMPLES);
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const outPath = join(__dirname, '..', 'public', 'openapi.json');
@@ -22,13 +18,12 @@ const SECURITY_SCHEMES = {
   bearerAuth: {
     type: 'http',
     scheme: 'bearer',
-    description:
-      'API token from Settings → Security → API Token. Send as `Authorization: Bearer <token>`.',
+    description: 'API token from Settings → Security → API Token. Send as `Authorization: Bearer <token>`. Browser-session-only operations reject API tokens.',
   },
   cookieAuth: {
     type: 'apiKey',
     in: 'cookie',
-    name: '3x-ui',
+    name: 'heimdall',
     description: 'Session cookie set by POST /login. Browser-only.',
   },
 };
@@ -45,51 +40,17 @@ function extractPathParams(openApiPath) {
   return params;
 }
 
-function mapType(t) {
+function schemaForType(t) {
   const v = String(t || '').toLowerCase();
-  if (v.endsWith('[]')) return 'array';
-  if (v === 'number' || v === 'integer' || v === 'int') return 'integer';
-  if (v === 'float' || v === 'double') return 'number';
-  if (v === 'boolean' || v === 'bool') return 'boolean';
-  if (v === 'array') return 'array';
-  if (v === 'object') return 'object';
-  return 'string';
-}
-
-function schemaFromType(t) {
-  const v = String(t || '').toLowerCase();
-  if (v.endsWith('[]')) {
-    const itemType = v.slice(0, -2);
-    return { type: 'array', items: { type: mapType(itemType) } };
-  }
-  if (v === 'file') return { type: 'string', format: 'binary' };
-  return { type: mapType(v) };
-}
-
-function schemaFromParam(p) {
-  const schema = schemaFromType(p.type);
-  if (p.defaultValue !== undefined) schema.default = p.defaultValue;
-  if (p.minLength !== undefined) schema.minLength = p.minLength;
-  if (p.pattern !== undefined) schema.pattern = p.pattern;
-  if (p.enum !== undefined) schema.enum = [...p.enum];
-  return schema;
-}
-
-function requestBodyContentType(ep, bodyParams) {
-  const locations = new Set(bodyParams.map((p) => p.in));
-  if (locations.size > 1) {
-    throw new Error(
-      `${ep.method} ${ep.path}: request body mixes parameter locations: ${[...locations].join(', ')}`,
-    );
-  }
-  switch (bodyParams[0]?.in) {
-    case 'body (form)':
-      return 'application/x-www-form-urlencoded';
-    case 'body (multipart)':
-      return 'multipart/form-data';
-    default:
-      return 'application/json';
-  }
+  if (v === 'string[]') return { type: 'array', items: { type: 'string' } };
+  if (v === 'integer[]' || v === 'int[]') return { type: 'array', items: { type: 'integer' } };
+  if (v === 'object[]') return { type: 'array', items: { type: 'object' } };
+  if (v === 'array') return { type: 'array', items: {} };
+  if (v === 'number' || v === 'integer' || v === 'int') return { type: 'integer' };
+  if (v === 'float' || v === 'double') return { type: 'number' };
+  if (v === 'boolean' || v === 'bool') return { type: 'boolean' };
+  if (v === 'object') return { type: 'object' };
+  return { type: 'string' };
 }
 
 function tryParseJson(raw) {
@@ -107,39 +68,51 @@ function paramToOpenApi(p) {
     in: p.in,
     required: p.in === 'path' ? true : !p.optional,
     description: p.desc || '',
-    schema: schemaFromParam(p),
+    schema: schemaForType(p.type),
   };
+  if (p.defaultValue !== undefined) out.schema.default = p.defaultValue;
   return out;
 }
 
-// A `responses` entry that $refs a generated schema takes its example from the
-// Go `example:` tags, the same source responseSchema uses — never hand-written.
-function withGeneratedExample(ep, code, res) {
-  const json = res.content?.['application/json'];
-  const name = json?.schema?.$ref?.replace('#/components/schemas/', '');
-  if (!name) return res;
-  if (SCHEMAS[name] === undefined || EXAMPLES[name] === undefined) {
-    throw new Error(`${ep.method} ${ep.path}: ${code} response schema "${name}" is not generated`);
-  }
+function authErrorResponse(description, message) {
   return {
-    ...res,
-    content: { ...res.content, 'application/json': { example: EXAMPLES[name], ...json } },
+    description,
+    content: {
+      'application/json': {
+        schema: {
+          type: 'object',
+          properties: {
+            success: { type: 'boolean' },
+            msg: { type: 'string' },
+          },
+        },
+        example: { success: false, msg: message },
+      },
+    },
   };
 }
 
-function buildOperation(ep, tag) {
+function buildOperation(ep, tag, inheritedAuth) {
+  const auth = ep.auth || inheritedAuth || 'bearer-or-cookie';
   const op = {
     tags: [tag],
     summary: ep.summary || '',
     operationId: `${ep.method.toLowerCase()}_${ep.path.replace(/[^A-Za-z0-9]+/g, '_').replace(/^_|_$/g, '')}`,
   };
+
+  if (auth === 'public') {
+    op.security = [];
+  } else if (auth === 'cookie-only') {
+    op.security = [{ cookieAuth: [] }];
+  }
+
   if (ep.description) op.description = ep.description;
   if (ep.deprecated) op.deprecated = true;
 
   const params = [];
   const bodyParams = [];
   for (const p of ep.params || []) {
-    if (p.in.startsWith('body')) {
+    if (p.in === 'body') {
       bodyParams.push(p);
     } else if (p.in === 'path' || p.in === 'query' || p.in === 'header') {
       params.push(paramToOpenApi(p));
@@ -161,79 +134,26 @@ function buildOperation(ep, tag) {
 
   if (params.length > 0) op.parameters = params;
 
-  if (ep.body || bodyParams.length > 0 || ep.requestSchema) {
-    const contentType = requestBodyContentType(ep, bodyParams);
-    const example = contentType === 'application/json' ? tryParseJson(ep.body) : undefined;
+  if (ep.body || bodyParams.length > 0) {
+    const example = tryParseJson(ep.body);
     const properties = {};
     const required = [];
     for (const bp of bodyParams) {
       properties[bp.name] = {
-        ...schemaFromParam(bp),
+        ...schemaForType(bp.type),
         description: bp.desc || '',
       };
       if (!bp.optional) required.push(bp.name);
     }
-    let schema;
-    if (ep.requestSchema) {
-      if (bodyParams.length > 0 || ep.bodyRequiredOneOf?.length) {
-        throw new Error(
-          `${ep.method} ${ep.path}: requestSchema cannot be combined with body parameters or bodyRequiredOneOf`,
-        );
-      }
-      schema = ep.requestSchema;
-    } else {
-      schema =
-        bodyParams.length > 0
-          ? { type: 'object', properties, ...(required.length > 0 ? { required } : {}) }
-          : { type: 'object' };
-      if (ep.bodyRequiredOneOf?.length) {
-        schema = {
-          anyOf: ep.bodyRequiredOneOf.map((name) => {
-            if (!properties[name]) {
-              throw new Error(
-                `${ep.method} ${ep.path}: bodyRequiredOneOf "${name}" is not a declared body parameter`,
-              );
-            }
-            const branchProperties = { ...properties };
-            for (const other of ep.bodyRequiredOneOf) {
-              if (other === name || !branchProperties[other]) continue;
-              const { pattern: _pattern, minLength: _minLength, ...rest } = branchProperties[other];
-              branchProperties[other] = rest;
-            }
-            return {
-              type: 'object',
-              properties: branchProperties,
-              required: [...required, name],
-            };
-          }),
-        };
-      }
-    }
-
-    const encoding = {};
-    if (contentType === 'application/x-www-form-urlencoded') {
-      for (const bp of bodyParams) {
-        const kind = schemaFromType(bp.type).type;
-        if (kind === 'array') {
-          encoding[bp.name] = { style: 'form', explode: true };
-        } else if (kind === 'object') {
-          // The panel reads such a field with json.Unmarshal, so it must be sent
-          // as JSON text rather than form-style key/value pairs.
-          encoding[bp.name] = { contentType: 'application/json' };
-        }
-      }
-    }
+    const schema = bodyParams.length > 0
+      ? { type: 'object', properties, ...(required.length > 0 ? { required } : {}) }
+      : { type: 'object' };
 
     op.requestBody = {
-      required:
-        Boolean(ep.requestSchema) ||
-        Boolean(ep.bodyRequiredOneOf?.length) ||
-        required.length > 0 ||
-        bodyParams.length === 0,
+      required: required.length > 0 || bodyParams.length === 0,
       content: {
-        [contentType]: {
+        'application/json': {
           schema,
-          ...(Object.keys(encoding).length > 0 ? { encoding } : {}),
           ...(example !== undefined ? { example } : {}),
         },
       },
@@ -243,56 +163,39 @@ function buildOperation(ep, tag) {
   const responses = {};
   let successExample = tryParseJson(ep.response);
   let objSchema = {};
-  if (ep.responseObjectSchema && ep.responseSchema) {
-    throw new Error(`${ep.method} ${ep.path}: responseObjectSchema cannot use responseSchema`);
-  }
-  if (ep.responseObjectSchema) objSchema = ep.responseObjectSchema;
   if (ep.responseSchema) {
     const obj = EXAMPLES[ep.responseSchema];
     if (obj === undefined) {
-      throw new Error(
-        `${ep.method} ${ep.path}: responseSchema "${ep.responseSchema}" has no generated example`,
-      );
+      throw new Error(`${ep.method} ${ep.path}: responseSchema "${ep.responseSchema}" has no generated example`);
     }
     if (SCHEMAS[ep.responseSchema] === undefined) {
-      throw new Error(
-        `${ep.method} ${ep.path}: responseSchema "${ep.responseSchema}" has no generated schema`,
-      );
+      throw new Error(`${ep.method} ${ep.path}: responseSchema "${ep.responseSchema}" has no generated schema`);
     }
     const ref = { $ref: `#/components/schemas/${ep.responseSchema}` };
-    objSchema = ep.responseSchemaArray
-      ? {
-          type: 'array',
-          ...(ep.responseSchemaArrayNullable ? { nullable: true } : {}),
-          items: ref,
-        }
-      : ref;
+    objSchema = ep.responseSchemaArray ? { type: 'array', items: ref } : ref;
     if (successExample === undefined) {
       successExample = { success: true, obj: ep.responseSchemaArray ? [obj] : obj };
     }
   }
-  if (ep.responses) {
-    for (const [code, res] of Object.entries(ep.responses)) {
-      responses[code] = withGeneratedExample(ep, code, res);
-    }
-  } else {
-    responses['200'] = {
-      description: 'Successful response',
-      content: {
-        'application/json': {
-          schema: {
-            type: 'object',
-            properties: {
-              success: { type: 'boolean' },
-              msg: { type: 'string' },
-              obj: objSchema,
-            },
+  const successResponse = {
+    description: ep.successDescription || 'Successful response',
+  };
+  if (!ep.emptyResponse) {
+    successResponse.content = {
+      'application/json': {
+        schema: {
+          type: 'object',
+          properties: {
+            success: { type: 'boolean' },
+            msg: { type: 'string' },
+            obj: objSchema,
           },
-          ...(successExample !== undefined ? { example: successExample } : {}),
         },
+        ...(successExample !== undefined ? { example: successExample } : {}),
       },
     };
   }
+  responses[String(ep.successStatus || 200)] = successResponse;
 
   const errExample = tryParseJson(ep.errorResponse);
   if (errExample !== undefined || ep.errorStatus) {
@@ -314,22 +217,46 @@ function buildOperation(ep, tag) {
     };
   }
 
+  if (auth === 'cookie-only') {
+    responses['401'] ??= ep.emptyAuthErrorResponse
+      ? { description: 'Browser login required' }
+      : authErrorResponse('Browser login required', 'login required');
+    responses['403'] ??= ep.emptyAuthErrorResponse
+      ? { description: 'Browser session or same-origin requirement is missing' }
+      : authErrorResponse(
+        'Browser session or required administrator permission is missing',
+        'browser session required',
+      );
+  }
+
   op.responses = responses;
-  if (ep.security !== undefined) op.security = ep.security;
   return op;
 }
 
-export function buildSpec() {
+function buildSpec() {
   const paths = {};
+  const websocketEvents = [];
   for (const section of sections) {
     const tag = section.title;
+    const websocketChannel = section.endpoints.find((item) => item.method === 'GET')?.path;
     for (const ep of section.endpoints) {
+      if (ep.method === 'WS') {
+        const example = tryParseJson(ep.response);
+        websocketEvents.push({
+          channel: websocketChannel || '/ws',
+          type: ep.path,
+          summary: ep.summary || '',
+          ...(ep.description ? { description: ep.description } : {}),
+          ...(example !== undefined ? { example } : {}),
+        });
+        continue;
+      }
+
       const openApiPath = ginPathToOpenApi(ep.path);
       if (!paths[openApiPath]) paths[openApiPath] = {};
-      paths[openApiPath][ep.method.toLowerCase()] = buildOperation(ep, tag);
+      paths[openApiPath][ep.method.toLowerCase()] = buildOperation(ep, tag, section.auth);
     }
   }
-  paths['/ws'].get['x-websocket-events'] = websocketEvents;
 
   const tags = sections.map((s) => ({
     name: s.title,
@@ -339,29 +266,32 @@ export function buildSpec() {
   return {
     openapi: '3.0.3',
     info: {
-      title: '3X-UI Panel API',
+      title: 'HEIMDALL Panel API',
       version: PANEL_VERSION,
       description:
-        'Programmatic interface to a 3X-UI panel. Authenticate either by logging in (cookie) or with an API token from Settings → Security → API Token (Bearer). All endpoints under /panel/api/* honour both modes — an API token is a full-admin credential, so treat it like the panel password.',
+        'Programmatic interface to a HEIMDALL panel. Most protected APIs accept either a browser session cookie or an API token from Settings → Security → API Token. Operations marked browser-session-only reject Bearer tokens. Treat every API token like a panel password.',
     },
-    servers: [{ url: '/', description: 'Current panel (basePath aware)' }],
+    servers: [
+      { url: '/', description: 'Current panel (basePath aware)' },
+    ],
     components: {
       securitySchemes: SECURITY_SCHEMES,
-      schemas: { ...SCHEMAS, WebSocketEnvelope: websocketEnvelopeSchema },
+      schemas: SCHEMAS,
     },
     security: [{ bearerAuth: [] }, { cookieAuth: [] }],
+    'x-websocket-events': websocketEvents,
     tags,
     paths,
   };
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  const spec = buildSpec();
-  writeFileSync(outPath, JSON.stringify(spec, null, 2) + '\n');
+const spec = buildSpec();
+writeFileSync(outPath, JSON.stringify(spec, null, 2) + '\n');
 
-  const pathCount = Object.keys(spec.paths).length;
-  let opCount = 0;
-  for (const ops of Object.values(spec.paths)) opCount += Object.keys(ops).length;
-  console.log(`[openapi] wrote ${outPath}`);
-  console.log(`[openapi] paths: ${pathCount}, operations: ${opCount}, tags: ${spec.tags.length}`);
-}
+const pathCount = Object.keys(spec.paths).length;
+let opCount = 0;
+for (const ops of Object.values(spec.paths)) opCount += Object.keys(ops).length;
+log(`[openapi] wrote ${outPath}`);
+log(`[openapi] paths: ${pathCount}, operations: ${opCount}, tags: ${spec.tags.length}`);
+
+void pathToFileURL;

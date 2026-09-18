@@ -85,7 +85,7 @@ func getLogPath(key string) (string, error) {
 			return logPath, nil
 		}
 	}
-	return "", nil
+	return "", err
 }
 
 // GetAccessLogPath reads the Xray config and returns the access log file path.
@@ -125,13 +125,11 @@ func NewTestProcess(xrayConfig *Config, configPath string) *Process {
 }
 
 type process struct {
-	// mu guards the process lifecycle fields (cmd, done, exitErr) plus version,
-	// apiPort, and config, which are written by Start/startCommand/refreshVersion/
-	// refreshAPIPort/SetConfig
-	// while being read concurrently by IsRunning/GetErr/GetResult/GetXrayVersion/
-	// GetAPIPort/Stop from other goroutines (status endpoint, check-xray-running
-	// and traffic jobs). Snapshot under the lock, then do any blocking syscall
-	// (Wait/Signal/Kill) on the local copy without holding it.
+	// mu guards the process lifecycle fields (cmd, done, exitErr) which are
+	// written by Start/startCommand and the waitForCommand goroutine while being
+	// read concurrently by IsRunning/GetErr/GetResult/Stop from other goroutines
+	// (status endpoint, check-xray-running job). Snapshot under the lock, then do
+	// any blocking syscall (Wait/Signal/Kill) on the local copy without holding it.
 	mu   sync.RWMutex
 	cmd  *exec.Cmd
 	done chan struct{}
@@ -139,32 +137,29 @@ type process struct {
 	version string
 	apiPort int
 
-	// onlineClients is the set of emails active on THIS panel's own xray
-	// within the online grace window. It is derived only from local xray
-	// traffic polls (see RefreshLocalOnline) — never from remote-node
-	// snapshots — so a client connected solely to a remote node is not
-	// reported online on local inbounds.
+	// onlineClients is the cached, sorted union of every local presence source.
+	// Xray exact/legacy and auxiliary sidecars are tracked independently so one
+	// source can never erase another source's live clients.
 	onlineClients []string
-	// localActiveInbounds is the set of THIS panel's inbound tags that
-	// carried traffic within the same grace window. Xray's user>>>email
-	// stat aggregates across every inbound a client is attached to, so an
-	// online email alone can't say which inbound it actually used. Pairing
-	// it with the inbound>>>tag stat lets the per-inbound view drop a
-	// multi-inbound client from inbounds that saw no traffic this window.
-	localActiveInbounds []string
-	// localLastOnline records, per email, the last time this panel's own
-	// xray reported traffic for it. RefreshLocalOnline rebuilds
-	// onlineClients from this map each tick, keeping the local online set
-	// independent of the shared client_traffics.last_online column — that
-	// column is bumped by remote-node syncs too and would otherwise leak
-	// remote-only clients into the local set.
-	localLastOnline map[string]int64
-	// localInboundLastActive mirrors localLastOnline for inbound tags: the
-	// last tick this panel's xray reported traffic through each tag.
-	// Rebuilt into localActiveInbounds under the same grace window so the
-	// two signals stay aligned — an email within grace always has the
-	// inbound it used within grace too.
-	localInboundLastActive map[string]int64
+	// xrayOnlineClients is the authoritative GetUsersStats snapshot for the
+	// running Xray process. It is used only after xrayOnlineExact becomes true.
+	xrayOnlineClients []string
+	// xrayOnlineExact becomes true after the current core returns its first
+	// authoritative connection snapshot. From that point traffic deltas may
+	// still maintain per-inbound activity, but cannot resurrect Xray users.
+	xrayOnlineExact bool
+	// legacyXrayLastOnline records traffic-delta presence only while the running
+	// core does not provide an authoritative online snapshot.
+	legacyXrayLastOnline map[string]int64
+	// auxiliaryLastOnline tracks logical emails reported by non-Xray runtimes,
+	// currently the MTProto mtg sidecar. It remains independent from Xray state.
+	auxiliaryLastOnline map[string]int64
+	// localActiveInbounds is the cached union of Xray and auxiliary inbound
+	// activity. Source timestamps stay separate so restarts and pruning cannot
+	// erase another runtime's active tags.
+	localActiveInbounds        []string
+	xrayInboundLastActive      map[string]int64
+	auxiliaryInboundLastActive map[string]int64
 	// nodeOnlineTrees holds, per direct remote node (keyed by that node's
 	// panel-local id), the GUID-keyed online-emails subtree that node
 	// reported — its own clients under its panelGuid plus every descendant
@@ -173,15 +168,16 @@ type process struct {
 	// hosts it across a chain (#4983); the outer node-id key is only so a
 	// failed probe can drop that whole branch's contribution. NodeTrafficSyncJob
 	// populates entries per cron tick and clears them when a probe fails. The
-	// mutex guards this map, onlineClients, and localLastOnline above so the
-	// online getters never see a torn read.
+	// mutex guards remote trees and every local source snapshot above.
 	nodeOnlineTrees map[int]map[string][]string
-	// nodeActiveInboundTrees mirrors nodeOnlineTrees for active inbound tags:
-	// each direct node reports a GUID-keyed subtree of inbound tags that carried
-	// traffic within its own grace window. The inbounds page combines this with
-	// nodeOnlineTrees so a multi-inbound client is not shown on an idle inbound.
-	nodeActiveInboundTrees map[int]map[string][]string
-	onlineMu               sync.RWMutex
+	onlineMu        sync.RWMutex
+
+	// onlineUsersSnapshot is the latest successful raw GetUsersStats result.
+	// Presence owns the RPC poll; traffic and IP-observation jobs consume this
+	// per-process cache so one core snapshot is not fetched three times.
+	onlineUsersSnapshot      []OnlineUser
+	onlineUsersSnapshotAt    time.Time
+	onlineUsersSnapshotReady bool
 
 	// onlineAPISupport caches whether the running core implements the
 	// online-stats RPCs (GetUsersStats). A new process is created on every
@@ -221,10 +217,73 @@ func (p *process) SetOnlineAPISupport(v OnlineAPISupport) {
 	p.onlineAPISupport.Store(int32(v))
 }
 
+func cloneOnlineUsersSnapshot(users []OnlineUser) []OnlineUser {
+	out := make([]OnlineUser, len(users))
+	for i := range users {
+		out[i] = users[i]
+		out[i].IPs = append([]OnlineIP(nil), users[i].IPs...)
+	}
+	return out
+}
+
+// StoreOnlineUsersSnapshot records one successful authoritative core snapshot.
+// An empty slice is a valid snapshot and must remain distinguishable from no
+// successful poll yet. Production presence uses CommitXrayOnlineSnapshot so the
+// canonical and raw views become visible under one mutex acquisition.
+func (p *process) StoreOnlineUsersSnapshot(users []OnlineUser, at time.Time) {
+	p.onlineMu.Lock()
+	p.onlineUsersSnapshot = cloneOnlineUsersSnapshot(users)
+	p.onlineUsersSnapshotAt = at
+	p.onlineUsersSnapshotReady = true
+	p.onlineMu.Unlock()
+}
+
+// CachedOnlineUsersSnapshot returns an isolated copy only while the last
+// successful snapshot is fresh enough for secondary consumers.
+func (p *process) CachedOnlineUsersSnapshot(maxAge time.Duration, now time.Time) ([]OnlineUser, bool) {
+	if maxAge <= 0 {
+		return nil, false
+	}
+
+	p.onlineMu.RLock()
+	defer p.onlineMu.RUnlock()
+
+	if !p.onlineUsersSnapshotReady {
+		return nil, false
+	}
+	age := now.Sub(p.onlineUsersSnapshotAt)
+	if age < 0 {
+		age = 0
+	}
+	if age > maxAge {
+		return nil, false
+	}
+	return cloneOnlineUsersSnapshot(p.onlineUsersSnapshot), true
+}
+
+// HasFreshOnlineUsersSnapshot checks cache readiness without cloning the full
+// user/IP payload. Traffic polling only needs this freshness gate.
+func (p *process) HasFreshOnlineUsersSnapshot(maxAge time.Duration, now time.Time) bool {
+	if maxAge <= 0 {
+		return false
+	}
+
+	p.onlineMu.RLock()
+	defer p.onlineMu.RUnlock()
+
+	if !p.onlineUsersSnapshotReady {
+		return false
+	}
+	age := now.Sub(p.onlineUsersSnapshotAt)
+	if age < 0 {
+		age = 0
+	}
+	return age <= maxAge
+}
+
 var (
 	xrayGracefulStopTimeout = 5 * time.Second
 	xrayForceStopTimeout    = 2 * time.Second
-	xrayVersionTimeout      = 5 * time.Second
 	// OnCrash is called when xray crashes unexpectedly. Set from web layer.
 	OnCrash func(err error)
 )
@@ -288,22 +347,16 @@ func (p *process) GetResult() string {
 
 // GetXrayVersion returns the version string of the Xray process.
 func (p *process) GetXrayVersion() string {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
 	return p.version
 }
 
 // GetAPIPort returns the API port used by the Xray process.
 func (p *Process) GetAPIPort() int {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
 	return p.apiPort
 }
 
 // GetConfig returns the configuration used by the Xray process.
 func (p *Process) GetConfig() *Config {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
 	return p.config
 }
 
@@ -311,16 +364,12 @@ func (p *Process) GetConfig() *Config {
 // process has been reconciled with it through the gRPC API (hot apply), so
 // later change detection compares against what is actually running.
 func (p *Process) SetConfig(config *Config) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
 	p.config = config
 }
 
-// GetOnlineClients returns the union of locally-online clients and
-// node-online clients from every registered remote panel. Dedupes by
-// email so a client connected to both a local and a node-managed inbound
-// surfaces once. Cheap allocation — typical online sets are small and
-// the union is recomputed on demand.
+// GetOnlineClients returns the union of every local presence source and
+// node-online clients from registered remote panels. Dedupes by email so a
+// client connected through multiple runtimes or nodes surfaces once.
 func (p *Process) GetOnlineClients() []string {
 	p.onlineMu.RLock()
 	defer p.onlineMu.RUnlock()
@@ -351,9 +400,8 @@ func (p *Process) GetOnlineClients() []string {
 	return out
 }
 
-// GetLocalOnlineClients returns a copy of the emails online on THIS panel's own
-// xray within the grace window. The service layer keys these under the panel's
-// own GUID when assembling the per-node online view.
+// GetLocalOnlineClients returns a copy of the deduplicated local union:
+// exact/legacy Xray plus auxiliary runtimes such as MTProto.
 func (p *Process) GetLocalOnlineClients() []string {
 	p.onlineMu.RLock()
 	defer p.onlineMu.RUnlock()
@@ -402,10 +450,9 @@ func (p *Process) GetMergedNodeTrees() map[string][]string {
 	return out
 }
 
-// GetLocalActiveInbounds returns a copy of THIS panel's inbound tags that
-// carried traffic within the grace window. The service layer keys these under
-// the panel's own GUID before merging them with remote-node active-inbound
-// subtrees.
+// GetLocalActiveInbounds returns the local union of Xray and auxiliary
+// inbound tags that carried traffic within the grace window. Remote-node
+// snapshots do not carry this detail.
 func (p *Process) GetLocalActiveInbounds() []string {
 	p.onlineMu.RLock()
 	defer p.onlineMu.RUnlock()
@@ -417,83 +464,345 @@ func (p *Process) GetLocalActiveInbounds() []string {
 	return out
 }
 
-// GetMergedActiveInboundTrees returns the union of every direct node's reported
-// active-inbound subtree, keyed by the panelGuid of the node that physically
-// hosts each inbound. Duplicate tags reported through multiple paths are
-// deduped per GUID.
-func (p *Process) GetMergedActiveInboundTrees() map[string][]string {
+// normalizeOnlineEmails returns a stable, deduplicated snapshot.
+func normalizeOnlineEmails(emails []string) []string {
+	seen := make(map[string]struct{}, len(emails))
+	out := make([]string, 0, len(emails))
+	for _, raw := range emails {
+		email := strings.TrimSpace(raw)
+		if email == "" {
+			continue
+		}
+		if _, duplicate := seen[email]; duplicate {
+			continue
+		}
+		seen[email] = struct{}{}
+		out = append(out, email)
+	}
+	sort.Strings(out)
+	return out
+}
+
+func equalOnlineEmails(left, right []string) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for index := range left {
+		if left[index] != right[index] {
+			return false
+		}
+	}
+	return true
+}
+
+func updateLastSeenEmails(lastSeen map[string]int64, emails []string, now int64) map[string]int64 {
+	if lastSeen == nil && len(emails) > 0 {
+		lastSeen = make(map[string]int64, len(emails))
+	}
+	for _, raw := range emails {
+		email := strings.TrimSpace(raw)
+		if email != "" {
+			lastSeen[email] = now
+		}
+	}
+	return lastSeen
+}
+
+func pruneLastSeen(lastSeen map[string]int64, now, graceMs int64) {
+	for key, seenAt := range lastSeen {
+		if graceMs <= 0 || now-seenAt >= graceMs {
+			delete(lastSeen, key)
+		}
+	}
+}
+
+func (p *Process) rebuildLocalOnlineLocked() bool {
+	seen := make(map[string]struct{})
+	out := make([]string, 0, len(p.xrayOnlineClients)+len(p.legacyXrayLastOnline)+len(p.auxiliaryLastOnline))
+	add := func(email string) {
+		email = strings.TrimSpace(email)
+		if email == "" {
+			return
+		}
+		if _, exists := seen[email]; exists {
+			return
+		}
+		seen[email] = struct{}{}
+		out = append(out, email)
+	}
+
+	if p.xrayOnlineExact {
+		for _, email := range p.xrayOnlineClients {
+			add(email)
+		}
+	} else {
+		for email := range p.legacyXrayLastOnline {
+			add(email)
+		}
+	}
+	for email := range p.auxiliaryLastOnline {
+		add(email)
+	}
+	sort.Strings(out)
+
+	if equalOnlineEmails(p.onlineClients, out) {
+		return false
+	}
+	p.onlineClients = out
+	return true
+}
+
+func updateLastSeenTags(lastSeen map[string]int64, tags []string, now int64) map[string]int64 {
+	if lastSeen == nil && len(tags) > 0 {
+		lastSeen = make(map[string]int64, len(tags))
+	}
+	for _, raw := range tags {
+		tag := strings.TrimSpace(raw)
+		if tag != "" {
+			lastSeen[tag] = now
+		}
+	}
+	return lastSeen
+}
+
+func (p *Process) rebuildActiveInboundsLocked() {
+	seen := make(map[string]struct{}, len(p.xrayInboundLastActive)+len(p.auxiliaryInboundLastActive))
+	active := make([]string, 0, len(p.xrayInboundLastActive)+len(p.auxiliaryInboundLastActive))
+	add := func(tag string) {
+		tag = strings.TrimSpace(tag)
+		if tag == "" {
+			return
+		}
+		if _, exists := seen[tag]; exists {
+			return
+		}
+		seen[tag] = struct{}{}
+		active = append(active, tag)
+	}
+	for tag := range p.xrayInboundLastActive {
+		add(tag)
+	}
+	for tag := range p.auxiliaryInboundLastActive {
+		add(tag)
+	}
+	sort.Strings(active)
+	p.localActiveInbounds = active
+}
+
+func (p *Process) replaceXrayOnlineSnapshotLocked(next []string, now, graceMs int64) bool {
+	p.xrayOnlineExact = true
+	p.xrayOnlineClients = next
+	p.legacyXrayLastOnline = nil
+	pruneLastSeen(p.auxiliaryLastOnline, now, graceMs)
+	pruneLastSeen(p.xrayInboundLastActive, now, graceMs)
+	pruneLastSeen(p.auxiliaryInboundLastActive, now, graceMs)
+	p.rebuildActiveInboundsLocked()
+	return p.rebuildLocalOnlineLocked()
+}
+
+// ReplaceXrayOnlineSnapshot installs the core's authoritative Xray presence
+// snapshot while preserving clients reported by auxiliary runtimes.
+func (p *Process) ReplaceXrayOnlineSnapshot(emails []string, now, graceMs int64) bool {
+	next := normalizeOnlineEmails(emails)
+
+	p.onlineMu.Lock()
+	defer p.onlineMu.Unlock()
+
+	return p.replaceXrayOnlineSnapshotLocked(next, now, graceMs)
+}
+
+// CommitXrayOnlineSnapshot atomically installs the canonical exact-presence set
+// and the raw user/IP snapshot consumed by secondary jobs. Both views share
+// onlineMu, so readers cannot observe a canonical tick without its matching raw
+// snapshot or vice versa.
+func (p *Process) CommitXrayOnlineSnapshot(
+	emails []string,
+	users []OnlineUser,
+	at time.Time,
+	now, graceMs int64,
+) bool {
+	next := normalizeOnlineEmails(emails)
+	raw := cloneOnlineUsersSnapshot(users)
+
+	p.onlineMu.Lock()
+	defer p.onlineMu.Unlock()
+
+	changed := p.replaceXrayOnlineSnapshotLocked(next, now, graceMs)
+	p.onlineUsersSnapshot = raw
+	p.onlineUsersSnapshotAt = at
+	p.onlineUsersSnapshotReady = true
+	return changed
+}
+
+// ClearXrayOnlineSnapshot clears only Xray-owned presence and invalidates the
+// raw snapshot cache while preserving auxiliary runtimes such as MTProto.
+func (p *Process) ClearXrayOnlineSnapshot(now, graceMs int64) bool {
+	p.onlineMu.Lock()
+	defer p.onlineMu.Unlock()
+
+	changed := p.replaceXrayOnlineSnapshotLocked([]string{}, now, graceMs)
+	p.onlineUsersSnapshot = nil
+	p.onlineUsersSnapshotAt = time.Time{}
+	p.onlineUsersSnapshotReady = false
+	return changed
+}
+
+// XrayOnlineExact reports whether the current process has committed at least
+// one authoritative GetUsersStats snapshot.
+func (p *Process) XrayOnlineExact() bool {
 	p.onlineMu.RLock()
 	defer p.onlineMu.RUnlock()
-	if len(p.nodeActiveInboundTrees) == 0 {
-		return map[string][]string{}
+	return p.xrayOnlineExact
+}
+
+// GetExactXrayOnlineClients returns an isolated exact Xray-only snapshot.
+// Auxiliary sidecar clients are deliberately excluded.
+func (p *Process) GetExactXrayOnlineClients() []string {
+	p.onlineMu.RLock()
+	defer p.onlineMu.RUnlock()
+	if !p.xrayOnlineExact || len(p.xrayOnlineClients) == 0 {
+		return []string{}
 	}
-	out := make(map[string][]string)
-	seen := make(map[string]map[string]struct{})
-	for _, tree := range p.nodeActiveInboundTrees {
-		for guid, tags := range tree {
-			if guid == "" || len(tags) == 0 {
-				continue
-			}
-			dedup := seen[guid]
-			if dedup == nil {
-				dedup = make(map[string]struct{}, len(tags))
-				seen[guid] = dedup
-			}
-			for _, tag := range tags {
-				if tag == "" {
-					continue
-				}
-				if _, ok := dedup[tag]; ok {
-					continue
-				}
-				dedup[tag] = struct{}{}
-				out[guid] = append(out[guid], tag)
-			}
+	out := make([]string, len(p.xrayOnlineClients))
+	copy(out, p.xrayOnlineClients)
+	return out
+}
+
+// FreshExactXrayOnlineClients returns the exact Xray-only set only when the raw
+// snapshot from the same atomic commit remains fresh.
+func (p *Process) FreshExactXrayOnlineClients(
+	maxAge time.Duration,
+	now time.Time,
+) ([]string, bool) {
+	if maxAge <= 0 {
+		return nil, false
+	}
+
+	p.onlineMu.RLock()
+	defer p.onlineMu.RUnlock()
+
+	if !p.xrayOnlineExact || !p.onlineUsersSnapshotReady {
+		return nil, false
+	}
+	age := now.Sub(p.onlineUsersSnapshotAt)
+	if age < 0 {
+		age = 0
+	}
+	if age > maxAge {
+		return nil, false
+	}
+	out := make([]string, len(p.xrayOnlineClients))
+	copy(out, p.xrayOnlineClients)
+	return out, true
+}
+
+// RefreshLegacyXrayOnline records traffic-delta Xray presence for cores without
+// GetUsersStats. Once exact mode is active, email deltas are ignored, but Xray
+// inbound activity and auxiliary expiry are still maintained.
+func (p *Process) RefreshLegacyXrayOnline(activeEmails, activeInboundTags []string, now, graceMs int64) bool {
+	p.onlineMu.Lock()
+	defer p.onlineMu.Unlock()
+
+	if !p.xrayOnlineExact {
+		p.legacyXrayLastOnline = updateLastSeenEmails(p.legacyXrayLastOnline, activeEmails, now)
+		pruneLastSeen(p.legacyXrayLastOnline, now, graceMs)
+	} else {
+		p.legacyXrayLastOnline = nil
+	}
+	p.xrayInboundLastActive = updateLastSeenTags(p.xrayInboundLastActive, activeInboundTags, now)
+	pruneLastSeen(p.xrayInboundLastActive, now, graceMs)
+	pruneLastSeen(p.auxiliaryLastOnline, now, graceMs)
+	pruneLastSeen(p.auxiliaryInboundLastActive, now, graceMs)
+	p.rebuildActiveInboundsLocked()
+	return p.rebuildLocalOnlineLocked()
+}
+
+// RefreshAuxiliaryOnline records logical emails reported by non-Xray runtimes,
+// currently MTProto's mtg sidecar. It never changes the authoritative Xray set.
+func (p *Process) RefreshAuxiliaryOnline(activeEmails, activeInboundTags []string, now, graceMs int64) bool {
+	p.onlineMu.Lock()
+	defer p.onlineMu.Unlock()
+
+	p.auxiliaryLastOnline = updateLastSeenEmails(p.auxiliaryLastOnline, activeEmails, now)
+	p.auxiliaryInboundLastActive = updateLastSeenTags(p.auxiliaryInboundLastActive, activeInboundTags, now)
+	pruneLastSeen(p.auxiliaryLastOnline, now, graceMs)
+	pruneLastSeen(p.auxiliaryInboundLastActive, now, graceMs)
+	if !p.xrayOnlineExact {
+		pruneLastSeen(p.legacyXrayLastOnline, now, graceMs)
+	}
+	pruneLastSeen(p.xrayInboundLastActive, now, graceMs)
+	p.rebuildActiveInboundsLocked()
+	return p.rebuildLocalOnlineLocked()
+}
+
+// PruneLocalPresence expires stale grace-based sources without adding activity.
+// Exact Xray users remain controlled exclusively by ReplaceXrayOnlineSnapshot.
+func (p *Process) PruneLocalPresence(now, graceMs int64) bool {
+	p.onlineMu.Lock()
+	defer p.onlineMu.Unlock()
+
+	if !p.xrayOnlineExact {
+		pruneLastSeen(p.legacyXrayLastOnline, now, graceMs)
+	}
+	pruneLastSeen(p.auxiliaryLastOnline, now, graceMs)
+	pruneLastSeen(p.xrayInboundLastActive, now, graceMs)
+	pruneLastSeen(p.auxiliaryInboundLastActive, now, graceMs)
+	p.rebuildActiveInboundsLocked()
+	return p.rebuildLocalOnlineLocked()
+}
+
+// AuxiliaryPresenceSnapshot carries non-Xray presence across an Xray process
+// replacement. Timestamps are retained so restore cannot extend a stale lease.
+type AuxiliaryPresenceSnapshot struct {
+	LastOnline        map[string]int64
+	InboundLastActive map[string]int64
+}
+
+// SnapshotAuxiliaryPresence returns an isolated copy of auxiliary timestamps.
+func (p *Process) SnapshotAuxiliaryPresence() AuxiliaryPresenceSnapshot {
+	p.onlineMu.RLock()
+	defer p.onlineMu.RUnlock()
+
+	out := AuxiliaryPresenceSnapshot{}
+	if len(p.auxiliaryLastOnline) > 0 {
+		out.LastOnline = make(map[string]int64, len(p.auxiliaryLastOnline))
+		for email, seenAt := range p.auxiliaryLastOnline {
+			out.LastOnline[email] = seenAt
+		}
+	}
+	if len(p.auxiliaryInboundLastActive) > 0 {
+		out.InboundLastActive = make(map[string]int64, len(p.auxiliaryInboundLastActive))
+		for tag, seenAt := range p.auxiliaryInboundLastActive {
+			out.InboundLastActive[tag] = seenAt
 		}
 	}
 	return out
 }
 
-// RefreshLocalOnline records that each email in activeEmails and each tag in
-// activeInboundTags had local xray traffic at now, then rebuilds onlineClients
-// and localActiveInbounds from every entry seen within graceMs, pruning older
-// ones. Called by the local XrayTrafficJob after each xray gRPC stats poll.
-// Pass nil/empty slices to only prune — NodeTrafficSyncJob does this so a
-// stopped local xray's clients and inbounds still age out between local polls.
-func (p *Process) RefreshLocalOnline(activeEmails, activeInboundTags []string, now, graceMs int64) {
+// RestoreAuxiliaryPresence restores only still-fresh non-Xray entries.
+func (p *Process) RestoreAuxiliaryPresence(snapshot AuxiliaryPresenceSnapshot, now, graceMs int64) bool {
 	p.onlineMu.Lock()
 	defer p.onlineMu.Unlock()
-	if p.localLastOnline == nil {
-		p.localLastOnline = make(map[string]int64, len(activeEmails))
-	}
-	for _, email := range activeEmails {
-		p.localLastOnline[email] = now
-	}
-	online := make([]string, 0, len(p.localLastOnline))
-	for email, ts := range p.localLastOnline {
-		if now-ts < graceMs {
-			online = append(online, email)
-		} else {
-			delete(p.localLastOnline, email)
-		}
-	}
-	p.onlineClients = online
 
-	if p.localInboundLastActive == nil {
-		p.localInboundLastActive = make(map[string]int64, len(activeInboundTags))
+	if len(snapshot.LastOnline) == 0 && len(snapshot.InboundLastActive) == 0 {
+		return false
 	}
-	for _, tag := range activeInboundTags {
-		p.localInboundLastActive[tag] = now
-	}
-	activeInbounds := make([]string, 0, len(p.localInboundLastActive))
-	for tag, ts := range p.localInboundLastActive {
-		if now-ts < graceMs {
-			activeInbounds = append(activeInbounds, tag)
-		} else {
-			delete(p.localInboundLastActive, tag)
+	if len(snapshot.LastOnline) > 0 {
+		p.auxiliaryLastOnline = make(map[string]int64, len(snapshot.LastOnline))
+		for email, seenAt := range snapshot.LastOnline {
+			p.auxiliaryLastOnline[email] = seenAt
 		}
 	}
-	p.localActiveInbounds = activeInbounds
+	if len(snapshot.InboundLastActive) > 0 {
+		p.auxiliaryInboundLastActive = make(map[string]int64, len(snapshot.InboundLastActive))
+		for tag, seenAt := range snapshot.InboundLastActive {
+			p.auxiliaryInboundLastActive[tag] = seenAt
+		}
+	}
+	pruneLastSeen(p.auxiliaryLastOnline, now, graceMs)
+	pruneLastSeen(p.auxiliaryInboundLastActive, now, graceMs)
+	p.rebuildActiveInboundsLocked()
+	return p.rebuildLocalOnlineLocked()
 }
 
 // SetNodeOnlineTree records the GUID-keyed online subtree one direct remote
@@ -503,29 +812,10 @@ func (p *Process) RefreshLocalOnline(activeEmails, activeInboundTags []string, n
 func (p *Process) SetNodeOnlineTree(nodeID int, tree map[string][]string) {
 	p.onlineMu.Lock()
 	defer p.onlineMu.Unlock()
-	if len(tree) == 0 {
-		delete(p.nodeOnlineTrees, nodeID)
-		return
-	}
 	if p.nodeOnlineTrees == nil {
 		p.nodeOnlineTrees = map[int]map[string][]string{}
 	}
 	p.nodeOnlineTrees[nodeID] = tree
-}
-
-// SetNodeActiveInboundTree records the GUID-keyed active-inbound subtree one
-// direct remote node reported. Replaces any previous entry for that node.
-func (p *Process) SetNodeActiveInboundTree(nodeID int, tree map[string][]string) {
-	p.onlineMu.Lock()
-	defer p.onlineMu.Unlock()
-	if len(tree) == 0 {
-		delete(p.nodeActiveInboundTrees, nodeID)
-		return
-	}
-	if p.nodeActiveInboundTrees == nil {
-		p.nodeActiveInboundTrees = map[int]map[string][]string{}
-	}
-	p.nodeActiveInboundTrees[nodeID] = tree
 }
 
 // ClearNodeOnlineClients drops a direct node's whole subtree contribution.
@@ -535,24 +825,6 @@ func (p *Process) ClearNodeOnlineClients(nodeID int) {
 	p.onlineMu.Lock()
 	defer p.onlineMu.Unlock()
 	delete(p.nodeOnlineTrees, nodeID)
-	delete(p.nodeActiveInboundTrees, nodeID)
-}
-
-// RetainNodeOnlineClients drops the subtree of every direct node keep rejects: nodes
-// the master stopped syncing without a failed probe (disabled, offline, deleted).
-func (p *Process) RetainNodeOnlineClients(keep func(nodeID int) bool) {
-	p.onlineMu.Lock()
-	defer p.onlineMu.Unlock()
-	for nodeID := range p.nodeOnlineTrees {
-		if !keep(nodeID) {
-			delete(p.nodeOnlineTrees, nodeID)
-		}
-	}
-	for nodeID := range p.nodeActiveInboundTrees {
-		if !keep(nodeID) {
-			delete(p.nodeActiveInboundTrees, nodeID)
-		}
-	}
 }
 
 // GetUptime returns the uptime of the Xray process in seconds.
@@ -562,32 +834,28 @@ func (p *Process) GetUptime() uint64 {
 
 // refreshAPIPort updates the API port from the inbound configs.
 func (p *process) refreshAPIPort() {
-	port := 0
 	for _, inbound := range p.config.InboundConfigs {
 		if inbound.Tag == "api" {
-			port = inbound.Port
+			p.apiPort = inbound.Port
 			break
 		}
 	}
-	p.mu.Lock()
-	p.apiPort = port
-	p.mu.Unlock()
 }
 
 // refreshVersion updates the version string by running the Xray binary with -version.
 func (p *process) refreshVersion() {
-	version := "Unknown"
-	ctx, cancel := context.WithTimeout(context.Background(), xrayVersionTimeout)
-	defer cancel()
-	cmd := exec.CommandContext(ctx, GetBinaryPath(), "-version")
-	if data, err := cmd.Output(); err == nil {
-		if datas := bytes.Split(data, []byte(" ")); len(datas) > 1 {
-			version = string(datas[1])
+	cmd := exec.CommandContext(context.Background(), GetBinaryPath(), "-version")
+	data, err := cmd.Output()
+	if err != nil {
+		p.version = "Unknown"
+	} else {
+		datas := bytes.Split(data, []byte(" "))
+		if len(datas) <= 1 {
+			p.version = "Unknown"
+		} else {
+			p.version = string(datas[1])
 		}
 	}
-	p.mu.Lock()
-	p.version = version
-	p.mu.Unlock()
 }
 
 // Start launches the Xray process with the current configuration.

@@ -35,91 +35,67 @@ func outboundSettings(t *testing.T, raw []byte) map[string]any {
 	return settings
 }
 
-func TestDefaultJSONUsesCompatibleLocalInbounds(t *testing.T) {
-	svc := NewSubJsonService("", "", "", "", nil)
-	inbounds, ok := svc.configJson["inbounds"].([]any)
-	if !ok {
-		t.Fatalf("default JSON inbounds = %#v, want array", svc.configJson["inbounds"])
+func TestSubJsonServiceBlankProfileInheritsNodeAddress(t *testing.T) {
+	nodeID := 7
+	subReq := &SubService{
+		address: "panel.example.com",
+		nodesByID: map[int]*model.Node{
+			7: {Id: 7, Address: "node7.example.com"},
+		},
+	}
+	inbound := &model.Inbound{
+		NodeID:            &nodeID,
+		Listen:            "0.0.0.0",
+		Port:              443,
+		Protocol:          model.VLESS,
+		Remark:            "json-inherit",
+		ShareAddrStrategy: "node",
+		Settings:          `{"encryption":"none"}`,
+		StreamSettings: `{
+			"network":"tcp",
+			"security":"none",
+			"tcpSettings":{"header":{"type":"none"}},
+			"externalProxy":[
+				{"enabled":true,"forceTls":"same","dest":"","port":0,"remark":"inherit"}
+			]
+		}`,
+	}
+	client := model.Client{
+		ID:    "11111111-2222-4333-8444-555555555555",
+		Email: "user",
 	}
 
-	byPort := make(map[float64]map[string]any, len(inbounds))
-	for _, raw := range inbounds {
-		inbound, ok := raw.(map[string]any)
-		if !ok {
-			t.Fatalf("default JSON inbound = %#v, want object", raw)
-		}
-		port, ok := inbound["port"].(float64)
-		if !ok {
-			t.Fatalf("default JSON inbound port = %#v, want number", inbound["port"])
-		}
-		byPort[port] = inbound
+	configs := NewSubJsonService("", "", "", subReq).getConfig(
+		subReq,
+		inbound,
+		client,
+		"panel.example.com",
+	)
+	if len(configs) != 1 {
+		t.Fatalf("len(configs) = %d, want 1", len(configs))
 	}
 
-	socks := byPort[10808]
-	if socks == nil {
-		t.Fatal("default JSON is missing the local inbound on port 10808")
+	var config map[string]any
+	if err := json.Unmarshal(configs[0], &config); err != nil {
+		t.Fatalf("unmarshal JSON subscription: %v", err)
 	}
-	if socks["protocol"] != "socks" || socks["tag"] != "mixed" {
-		t.Fatalf("port 10808 protocol/tag = %v/%v, want socks/mixed", socks["protocol"], socks["tag"])
+	outbounds, _ := config["outbounds"].([]any)
+	if len(outbounds) == 0 {
+		t.Fatalf("JSON subscription has no outbounds: %#v", config)
 	}
-	settings, _ := socks["settings"].(map[string]any)
-	if settings == nil || settings["udp"] != true {
-		t.Fatalf("port 10808 settings = %#v, want udp enabled", socks["settings"])
+	outbound, _ := outbounds[0].(map[string]any)
+	settings, _ := outbound["settings"].(map[string]any)
+	if settings["address"] != "node7.example.com" {
+		t.Fatalf("JSON address = %v, want node7.example.com", settings["address"])
 	}
-	if socks["listen"] != "127.0.0.1" {
-		t.Fatalf("port 10808 listen = %#v, want 127.0.0.1 (an unbound local inbound is exposed to the LAN and is not reachable by iOS packet tunnels)", socks["listen"])
-	}
-
-	http := byPort[10809]
-	if http == nil || http["protocol"] != "http" {
-		t.Fatalf("port 10809 inbound = %#v, want http protocol", http)
-	}
-	if http["listen"] != "127.0.0.1" {
-		t.Fatalf("port 10809 listen = %#v, want 127.0.0.1", http["listen"])
-	}
-}
-
-func TestSubJsonServiceVisionFlowDisablesTCPMuxOnly(t *testing.T) {
-	globalMux := `{"enabled":true,"concurrency":8,"xudpConcurrency":16,"xudpProxyUDP443":"reject"}`
-	svc := NewSubJsonService(globalMux, "", "", "", nil)
-	inbound := &model.Inbound{Listen: "1.2.3.4", Port: 443, Protocol: model.VLESS, Settings: `{"encryption":"none"}`}
-
-	decode := func(raw []byte) map[string]any {
-		t.Helper()
-		var ob map[string]any
-		if err := json.Unmarshal(raw, &ob); err != nil {
-			t.Fatalf("unmarshal outbound: %v", err)
-		}
-		return ob
-	}
-
-	vision := decode([]byte(svc.genVless(&SubService{}, inbound, nil, model.Client{ID: "uuid-1", Flow: "xtls-rprx-vision"}, globalMux)))
-	mux, _ := vision["mux"].(map[string]any)
-	if mux == nil {
-		t.Fatalf("vision outbound must keep its mux object for the XUDP keys, got %#v", vision["mux"])
-	}
-	if mux["concurrency"] != float64(-1) {
-		t.Fatalf("vision outbound mux.concurrency = %v, want -1 (TCP mux.cool is rejected by XTLS flows)", mux["concurrency"])
-	}
-	if mux["enabled"] != true || mux["xudpConcurrency"] != float64(16) || mux["xudpProxyUDP443"] != "reject" {
-		t.Fatalf("vision outbound lost its XUDP settings: %#v", mux)
-	}
-
-	plain := decode([]byte(svc.genVless(&SubService{}, inbound, nil, model.Client{ID: "uuid-1"}, globalMux)))
-	mux, _ = plain["mux"].(map[string]any)
-	if mux == nil || mux["concurrency"] != float64(8) {
-		t.Fatalf("flow-less outbound must keep the global mux unchanged, got %#v", plain["mux"])
-	}
-
-	noMux := decode([]byte(svc.genVless(&SubService{}, inbound, nil, model.Client{ID: "uuid-1", Flow: "xtls-rprx-vision"}, "")))
-	if _, has := noMux["mux"]; has {
-		t.Fatalf("no global mux must still mean no mux key, got %#v", noMux["mux"])
+	if settings["port"] != float64(443) {
+		t.Fatalf("JSON port = %v, want 443", settings["port"])
 	}
 }
 
 func TestSubJsonServiceInjectsGlobalFinalMask(t *testing.T) {
 	finalMask := `{"tcp":[{"type":"fragment","settings":{"packets":"tlshello","length":"100-200","delay":"10-20"}}],"udp":[{"type":"noise","settings":{"noise":[{"type":"base64","packet":"SGVsbG8="}]}}],"quicParams":{"congestion":"bbr"}}`
-	svc := NewSubJsonService("", "", finalMask, "", nil)
+	svc := NewSubJsonService("", "", finalMask, nil)
 
 	if hasDirectOutOutbound(svc) {
 		t.Fatal("direct_out outbound must never be emitted")
@@ -156,7 +132,7 @@ func TestSubJsonServiceInjectsGlobalFinalMask(t *testing.T) {
 
 func TestSubJsonServiceMergesWithExistingFinalMask(t *testing.T) {
 	finalMask := `{"tcp":[{"type":"fragment","settings":{"packets":"tlshello"}}]}`
-	svc := NewSubJsonService("", "", finalMask, "", nil)
+	svc := NewSubJsonService("", "", finalMask, nil)
 
 	stream := svc.streamData(`{
 		"network":"tcp","security":"none","tcpSettings":{"header":{"type":"none"}},
@@ -176,7 +152,7 @@ func TestSubJsonServiceMergesWithExistingFinalMask(t *testing.T) {
 }
 
 func TestSubJsonServiceNoFinalMaskWhenEmpty(t *testing.T) {
-	svc := NewSubJsonService("", "", "", "", nil)
+	svc := NewSubJsonService("", "", "", nil)
 	stream := svc.streamData(`{"network":"tcp","security":"none","tcpSettings":{"header":{"type":"none"}}}`, "")
 	if _, ok := stream["finalmask"]; ok {
 		t.Fatal("no finalmask should be emitted when subJsonFinalMask is empty")
@@ -190,7 +166,7 @@ func TestSubJsonServiceNoFinalMaskWhenEmpty(t *testing.T) {
 // the JSON subscription must emit that form, not an array, or v2ray clients fail
 // to import the config (#5401).
 func TestSubJsonServicePinnedCertJoinedToString(t *testing.T) {
-	svc := NewSubJsonService("", "", "", "", nil)
+	svc := NewSubJsonService("", "", "", nil)
 	stream := svc.streamData(`{"network":"tcp","security":"tls","tlsSettings":{"serverName":"a.example.com","settings":{"pinnedPeerCertSha256":["aa11","bb22"]}}}`, "")
 
 	tls, _ := stream["tlsSettings"].(map[string]any)
@@ -202,27 +178,11 @@ func TestSubJsonServicePinnedCertJoinedToString(t *testing.T) {
 	}
 }
 
-func TestSubJsonServiceTLSCipherSuitesForwarded(t *testing.T) {
-	svc := NewSubJsonService("", "", "", "", nil)
-	stream := svc.streamData(`{"network":"tcp","security":"tls","tlsSettings":{"serverName":"a.example.com","cipherSuites":"TLS_AES_256_GCM_SHA384","settings":{}}}`, "")
-
-	tls, _ := stream["tlsSettings"].(map[string]any)
-	if got := tls["cipherSuites"]; got != "TLS_AES_256_GCM_SHA384" {
-		t.Fatalf("cipherSuites = %#v, want %q", got, "TLS_AES_256_GCM_SHA384")
-	}
-
-	stream = svc.streamData(`{"network":"tcp","security":"tls","tlsSettings":{"serverName":"a.example.com","cipherSuites":"","settings":{}}}`, "")
-	tls, _ = stream["tlsSettings"].(map[string]any)
-	if _, present := tls["cipherSuites"]; present {
-		t.Fatalf("empty cipherSuites must be omitted, got %#v", tls["cipherSuites"])
-	}
-}
-
 func TestSubJsonServiceVlessFlattened(t *testing.T) {
 	inbound := &model.Inbound{Listen: "1.2.3.4", Port: 443, Protocol: model.VLESS, Settings: `{"encryption":"none"}`}
 	client := model.Client{ID: "uuid-1", Flow: "xtls-rprx-vision"}
 
-	settings := outboundSettings(t, NewSubJsonService("", "", "", "", nil).genVless(&SubService{}, inbound, nil, client, ""))
+	settings := outboundSettings(t, NewSubJsonService("", "", "", nil).genVless(&SubService{}, inbound, nil, client, ""))
 	if _, ok := settings["vnext"]; ok {
 		t.Fatal("vless outbound must not use vnext")
 	}
@@ -231,21 +191,11 @@ func TestSubJsonServiceVlessFlattened(t *testing.T) {
 	}
 }
 
-func TestSubJsonServiceVlessFlowSuppressedByDisableFlow(t *testing.T) {
-	inbound := &model.Inbound{Listen: "1.2.3.4", Port: 443, Protocol: model.VLESS, Settings: `{"encryption":"none"}`, DisableFlow: true}
-	client := model.Client{ID: "uuid-1", Flow: "xtls-rprx-vision"}
-
-	settings := outboundSettings(t, NewSubJsonService("", "", "", "", nil).genVless(&SubService{}, inbound, nil, client, ""))
-	if _, ok := settings["flow"]; ok {
-		t.Fatalf("DisableFlow inbound must not carry a flow in the JSON outbound: %#v", settings)
-	}
-}
-
 func TestSubJsonServiceVmessFlattened(t *testing.T) {
 	inbound := &model.Inbound{Listen: "1.2.3.4", Port: 443, Protocol: model.VMESS, Settings: `{}`}
 	client := model.Client{ID: "uuid-2"}
 
-	settings := outboundSettings(t, NewSubJsonService("", "", "", "", nil).genVnext(inbound, nil, client, ""))
+	settings := outboundSettings(t, NewSubJsonService("", "", "", nil).genVnext(inbound, nil, client, ""))
 	if _, ok := settings["vnext"]; ok {
 		t.Fatal("vmess outbound must not use vnext")
 	}
@@ -261,7 +211,7 @@ func TestSubJsonServiceServerUsesServersArray(t *testing.T) {
 	trojan := &model.Inbound{Listen: "1.2.3.4", Port: 443, Protocol: model.Trojan, Settings: `{}`}
 	client := model.Client{Password: "p4ss"}
 
-	settings := outboundSettings(t, NewSubJsonService("", "", "", "", nil).genServer(&SubService{}, trojan, nil, client, ""))
+	settings := outboundSettings(t, NewSubJsonService("", "", "", nil).genServer(&SubService{}, trojan, nil, client, ""))
 	server := firstServer(settings)
 	if server == nil {
 		t.Fatalf("trojan outbound must use a servers array, got: %#v", settings)
@@ -274,7 +224,7 @@ func TestSubJsonServiceServerUsesServersArray(t *testing.T) {
 	}
 
 	ss := &model.Inbound{Listen: "1.2.3.4", Port: 443, Protocol: model.Shadowsocks, Settings: `{"method":"aes-256-gcm"}`}
-	ssSettings := outboundSettings(t, NewSubJsonService("", "", "", "", nil).genServer(&SubService{}, ss, nil, client, ""))
+	ssSettings := outboundSettings(t, NewSubJsonService("", "", "", nil).genServer(&SubService{}, ss, nil, client, ""))
 	ssServer := firstServer(ssSettings)
 	if ssServer == nil {
 		t.Fatalf("shadowsocks outbound must use a servers array, got: %#v", ssSettings)
@@ -286,7 +236,7 @@ func TestSubJsonServiceServerUsesServersArray(t *testing.T) {
 
 func TestSubJsonServiceXmuxSuppressesGlobalMux(t *testing.T) {
 	globalMux := `{"enabled":true,"concurrency":8}`
-	svc := NewSubJsonService(globalMux, "", "", "", nil)
+	svc := NewSubJsonService(globalMux, "", "", nil)
 
 	// When xmux is present in xhttpSettings, the per-inbound xmux handles
 	// multiplexing and the legacy outbound.Mux must NOT be set.
@@ -333,7 +283,7 @@ func TestSubJsonServiceXmuxSuppressesGlobalMux(t *testing.T) {
 
 func TestSubJsonServiceGlobalMuxWhenNoXmux(t *testing.T) {
 	globalMux := `{"enabled":true,"concurrency":8}`
-	svc := NewSubJsonService(globalMux, "", "", "", nil)
+	svc := NewSubJsonService(globalMux, "", "", nil)
 
 	// When no xmux is present, the global subJsonMux should be used.
 	stream := `{"network":"xhttp","security":"tls","tlsSettings":{"serverName":"example.com"},"xhttpSettings":{"path":"/api","mode":"packet-up"}}`
@@ -387,7 +337,7 @@ func realitySpiderXFromStream(t *testing.T, svc *SubJsonService, clientKey strin
 }
 
 func TestSubJsonServiceRealityDataDerivesPerClientSpiderX(t *testing.T) {
-	svc := NewSubJsonService("", "", "", "", nil)
+	svc := NewSubJsonService("", "", "", nil)
 
 	alice := realitySpiderXFromStream(t, svc, "subAlice")
 	if again := realitySpiderXFromStream(t, svc, "subAlice"); again != alice {
@@ -403,13 +353,13 @@ func TestSubJsonServiceRealityDataDerivesPerClientSpiderX(t *testing.T) {
 // security whose settings key is missing or null previously panicked the
 // subscription request.
 func TestSubJsonServiceStreamDataMalformedInputs(t *testing.T) {
-	withMask := NewSubJsonService("", "", `{"tcp":[{"type":"fragment"}]}`, "", nil)
+	withMask := NewSubJsonService("", "", `{"tcp":[{"type":"fragment"}]}`, nil)
 	stream := withMask.streamData("not-json", "clientKey")
 	if _, ok := stream["finalmask"]; !ok {
 		t.Fatal("finalMask must still apply when stream settings fail to parse")
 	}
 
-	svc := NewSubJsonService("", "", "", "", nil)
+	svc := NewSubJsonService("", "", "", nil)
 	noReality := svc.streamData(`{"network":"tcp","security":"reality"}`, "clientKey")
 	if v, ok := noReality["realitySettings"]; ok {
 		t.Fatalf("missing realitySettings must stay absent, got %v", v)
@@ -421,7 +371,7 @@ func TestSubJsonServiceStreamDataMalformedInputs(t *testing.T) {
 }
 
 func TestSubJsonServiceRealityDataSpiderXFallsBackWhenNoClientKey(t *testing.T) {
-	svc := NewSubJsonService("", "", "", "", nil)
+	svc := NewSubJsonService("", "", "", nil)
 
 	stream := svc.streamData(`{
 		"network":"tcp","security":"reality","tcpSettings":{"header":{"type":"none"}},
@@ -462,11 +412,11 @@ func TestSubJsonServiceWireguard(t *testing.T) {
 		Email:        "user",
 		PrivateKey:   clientPriv,
 		PreSharedKey: "psk-value",
-		KeepAlive:    model.KeepAlivePtr(25),
+		KeepAlive:    25,
 		AllowedIPs:   []string{"10.0.0.2/32", "fd00::2/128"},
 	}
 
-	raw := NewSubJsonService("", "", "", "", nil).genWireguard(inbound, client)
+	raw := NewSubJsonService("", "", "", nil).genWireguard(inbound, client)
 	if raw == nil {
 		t.Fatal("genWireguard returned nil for a valid wireguard client")
 	}
@@ -510,24 +460,304 @@ func TestSubJsonServiceWireguardNoKey(t *testing.T) {
 	inbound := &model.Inbound{Listen: "203.0.113.9", Port: 51820, Protocol: model.WireGuard, Settings: `{}`}
 	client := model.Client{Email: "user"}
 
-	if raw := NewSubJsonService("", "", "", "", nil).genWireguard(inbound, client); raw != nil {
+	if raw := NewSubJsonService("", "", "", nil).genWireguard(inbound, client); raw != nil {
 		t.Fatalf("genWireguard = %s, want nil for a keyless wireguard client", raw)
 	}
 }
 
-func TestSubJsonServiceSkipsAmneziaWG(t *testing.T) {
-	if got := NewSubJsonService("", "", "", "", nil).getConfig(&SubService{address: "sub.example.com"}, &model.Inbound{Listen: "203.0.113.8", Port: 51820, Protocol: model.AmneziaWG}, model.Client{}, "sub.example.com"); len(got) != 0 {
-		t.Fatalf("getConfig emitted %d unsupported AmneziaWG Xray config(s)", len(got))
+func modernProfileJSONOutbound(t *testing.T, raw []byte) map[string]any {
+	t.Helper()
+
+	var config map[string]any
+	if err := json.Unmarshal(raw, &config); err != nil {
+		t.Fatalf("unmarshal JSON subscription: %v", err)
 	}
+	outbounds, _ := config["outbounds"].([]any)
+	if len(outbounds) == 0 {
+		t.Fatalf("JSON subscription has no outbounds: %#v", config)
+	}
+	outbound, _ := outbounds[0].(map[string]any)
+	if outbound == nil {
+		t.Fatalf("first outbound has invalid shape: %#v", outbounds[0])
+	}
+	return outbound
 }
 
-func TestSubJsonServiceSkipsTUIC(t *testing.T) {
-	if got := NewSubJsonService("", "", "", "", nil).getConfig(
-		&SubService{address: "sub.example.com"},
-		&model.Inbound{Listen: "203.0.113.8", Port: 8443, Protocol: model.TUIC},
-		model.Client{},
-		"sub.example.com",
-	); len(got) != 0 {
-		t.Fatalf("getConfig emitted %d unsupported TUIC Xray config(s)", len(got))
-	}
+func TestSubJsonServiceModernProfileProduction(t *testing.T) {
+	t.Run("TLS", func(t *testing.T) {
+		subReq := &SubService{}
+		inbound := &model.Inbound{
+			Listen:   "0.0.0.0",
+			Port:     27543,
+			Protocol: model.VLESS,
+			Remark:   "modern-json-tls",
+			Settings: `{"encryption":"none"}`,
+			StreamSettings: `{
+				"network":"tcp",
+				"security":"none",
+				"tcpSettings":{"header":{"type":"none"}},
+				"externalProxy":[
+					{
+						"enabled":false,
+						"network":"ws",
+						"security":"tls",
+						"dest":"disabled.example.com",
+						"port":443
+					},
+					{
+						"enabled":true,
+						"remark":"modern-ws-tls",
+						"dest":"cdn.example.com",
+						"port":8443,
+						"network":"ws",
+						"security":"tls",
+						"wsSettings":{
+							"path":"/modern",
+							"host":"origin.example.com",
+							"headers":{"Host":"origin.example.com"}
+						},
+						"tlsSettings":{
+							"serverName":"sni.example.com",
+							"alpn":["h2"],
+							"settings":{
+								"fingerprint":"chrome",
+								"allowInsecure":true
+							}
+						},
+						"sockopt":{
+							"tcpFastOpen":true,
+							"domainStrategy":"UseIP",
+							"acceptProxyProtocol":true,
+							"V6Only":true,
+							"trustedXForwardedFor":["127.0.0.1"]
+						},
+						"mux":{
+							"enabled":true,
+							"concurrency":4
+						},
+						"finalmask":{
+							"tcp":[{"type":"sudoku"}]
+						}
+					}
+				]
+			}`,
+		}
+		client := model.Client{
+			ID:    "11111111-2222-4333-8444-555555555555",
+			Email: "modern-json-user",
+		}
+
+		configs := NewSubJsonService("", "", "", subReq).getConfig(
+			subReq,
+			inbound,
+			client,
+			"panel.example.com",
+		)
+		if len(configs) != 1 {
+			t.Fatalf("len(configs) = %d, want 1 active profile", len(configs))
+		}
+
+		outbound := modernProfileJSONOutbound(t, configs[0])
+		settings, _ := outbound["settings"].(map[string]any)
+		if settings["address"] != "cdn.example.com" || settings["port"] != float64(8443) {
+			t.Fatalf("endpoint settings = %#v", settings)
+		}
+
+		stream, _ := outbound["streamSettings"].(map[string]any)
+		if stream["network"] != "ws" || stream["security"] != "tls" {
+			t.Fatalf("effective stream = %#v", stream)
+		}
+		ws, _ := stream["wsSettings"].(map[string]any)
+		if ws["path"] != "/modern" || ws["host"] != "origin.example.com" {
+			t.Fatalf("wsSettings = %#v", ws)
+		}
+		tlsSettings, _ := stream["tlsSettings"].(map[string]any)
+		if tlsSettings["serverName"] != "sni.example.com" {
+			t.Fatalf("serverName = %v", tlsSettings["serverName"])
+		}
+		if tlsSettings["fingerprint"] != "chrome" {
+			t.Fatalf("fingerprint = %v", tlsSettings["fingerprint"])
+		}
+		if tlsSettings["allowInsecure"] != true {
+			t.Fatalf("allowInsecure = %v", tlsSettings["allowInsecure"])
+		}
+
+		sockopt, _ := stream["sockopt"].(map[string]any)
+		if sockopt["tcpFastOpen"] != true || sockopt["domainStrategy"] != "UseIP" {
+			t.Fatalf("sockopt = %#v", sockopt)
+		}
+		for _, key := range []string{
+			"acceptProxyProtocol",
+			"V6Only",
+			"trustedXForwardedFor",
+		} {
+			if _, exists := sockopt[key]; exists {
+				t.Fatalf("listener-only sockopt key leaked: %s", key)
+			}
+		}
+
+		finalmask, _ := stream["finalmask"].(map[string]any)
+		tcpMasks, _ := finalmask["tcp"].([]any)
+		if len(tcpMasks) != 1 {
+			t.Fatalf("finalmask.tcp = %#v", finalmask["tcp"])
+		}
+
+		mux, _ := outbound["mux"].(map[string]any)
+		if mux["enabled"] != true || mux["concurrency"] != float64(4) {
+			t.Fatalf("mux = %#v", outbound["mux"])
+		}
+	})
+
+	t.Run("Reality", func(t *testing.T) {
+		subReq := &SubService{}
+		inbound := &model.Inbound{
+			Listen:   "0.0.0.0",
+			Port:     27543,
+			Protocol: model.VLESS,
+			Remark:   "modern-json-reality",
+			Settings: `{"encryption":"none"}`,
+			StreamSettings: `{
+				"network":"tcp",
+				"security":"none",
+				"tcpSettings":{"header":{"type":"none"}},
+				"externalProxy":[
+					{
+						"enabled":true,
+						"remark":"modern-reality",
+						"dest":"reality-edge.example.com",
+						"port":443,
+						"network":"tcp",
+						"security":"reality",
+						"tcpSettings":{"header":{"type":"none"}},
+						"realitySettings":{
+							"serverNames":["reality-sni.example.com"],
+							"shortIds":["ab12cd"],
+							"settings":{
+								"publicKey":"PROFILE_PUBLIC_KEY",
+								"fingerprint":"firefox"
+							}
+						}
+					}
+				]
+			}`,
+		}
+		client := model.Client{
+			ID:    "11111111-2222-4333-8444-555555555555",
+			Email: "modern-reality-user",
+		}
+
+		configs := NewSubJsonService("", "", "", subReq).getConfig(
+			subReq,
+			inbound,
+			client,
+			"panel.example.com",
+		)
+		if len(configs) != 1 {
+			t.Fatalf("len(configs) = %d, want 1", len(configs))
+		}
+
+		outbound := modernProfileJSONOutbound(t, configs[0])
+		settings, _ := outbound["settings"].(map[string]any)
+		if settings["address"] != "reality-edge.example.com" || settings["port"] != float64(443) {
+			t.Fatalf("endpoint settings = %#v", settings)
+		}
+		stream, _ := outbound["streamSettings"].(map[string]any)
+		if stream["security"] != "reality" {
+			t.Fatalf("security = %v", stream["security"])
+		}
+		realitySettings, _ := stream["realitySettings"].(map[string]any)
+		if realitySettings["serverName"] != "reality-sni.example.com" {
+			t.Fatalf("serverName = %v", realitySettings["serverName"])
+		}
+		if realitySettings["shortId"] != "ab12cd" {
+			t.Fatalf("shortId = %v", realitySettings["shortId"])
+		}
+		if realitySettings["publicKey"] != "PROFILE_PUBLIC_KEY" {
+			t.Fatalf("publicKey = %v", realitySettings["publicKey"])
+		}
+	})
+
+	t.Run("Hysteria", func(t *testing.T) {
+		subReq := &SubService{}
+		inbound := &model.Inbound{
+			Listen:   "0.0.0.0",
+			Port:     27543,
+			Protocol: model.Hysteria,
+			Remark:   "modern-json-hysteria",
+			Settings: `{"version":2}`,
+			StreamSettings: `{
+				"network":"hysteria",
+				"security":"tls",
+				"tlsSettings":{
+					"serverName":"base-sni.example.com",
+					"settings":{"fingerprint":"firefox","allowInsecure":false}
+				},
+				"hysteriaSettings":{
+					"udpIdleTimeout":30,
+					"masquerade":{"type":"proxy","url":"https://base.example.com"}
+				},
+				"externalProxy":[
+					{
+						"enabled":true,
+						"remark":"modern-hysteria",
+						"dest":"hy-edge.example.com",
+						"port":2443,
+						"network":"hysteria",
+						"security":"tls",
+						"tlsSettings":{
+							"serverName":"profile-sni.example.com",
+							"alpn":["h3"],
+							"settings":{"fingerprint":"chrome","allowInsecure":true}
+						},
+						"hysteriaSettings":{
+							"udpIdleTimeout":99,
+							"masquerade":{"type":"proxy","url":"https://profile.example.com"}
+						}
+					}
+				]
+			}`,
+		}
+		client := model.Client{
+			Email: "modern-hysteria-user",
+			Auth:  "profile-auth",
+		}
+
+		configs := NewSubJsonService("", "", "", subReq).getConfig(
+			subReq,
+			inbound,
+			client,
+			"panel.example.com",
+		)
+		if len(configs) != 1 {
+			t.Fatalf("len(configs) = %d, want 1", len(configs))
+		}
+
+		outbound := modernProfileJSONOutbound(t, configs[0])
+		settings, _ := outbound["settings"].(map[string]any)
+		if settings["address"] != "hy-edge.example.com" || settings["port"] != float64(2443) {
+			t.Fatalf("endpoint settings = %#v", settings)
+		}
+		stream, _ := outbound["streamSettings"].(map[string]any)
+		tlsSettings, _ := stream["tlsSettings"].(map[string]any)
+		if tlsSettings["serverName"] != "profile-sni.example.com" {
+			t.Fatalf("serverName = %v", tlsSettings["serverName"])
+		}
+		if tlsSettings["fingerprint"] != "chrome" {
+			t.Fatalf("fingerprint = %v", tlsSettings["fingerprint"])
+		}
+		if tlsSettings["allowInsecure"] != true {
+			t.Fatalf("allowInsecure = %v", tlsSettings["allowInsecure"])
+		}
+		hysteriaSettings, _ := stream["hysteriaSettings"].(map[string]any)
+		if hysteriaSettings["auth"] != "profile-auth" {
+			t.Fatalf("auth = %v", hysteriaSettings["auth"])
+		}
+		if hysteriaSettings["udpIdleTimeout"] != float64(99) {
+			t.Fatalf("udpIdleTimeout = %v", hysteriaSettings["udpIdleTimeout"])
+		}
+		masquerade, _ := hysteriaSettings["masquerade"].(map[string]any)
+		if masquerade["url"] != "https://profile.example.com" {
+			t.Fatalf("masquerade = %#v", masquerade)
+		}
+	})
 }

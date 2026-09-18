@@ -1,41 +1,21 @@
 import { useState } from 'react';
-import { useFormContext, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
-import {
-  Alert,
-  Button,
-  Collapse,
-  Descriptions,
-  Divider,
-  Form,
-  Input,
-  InputNumber,
-  Select,
-  Space,
-  Switch,
-} from 'antd';
+import { Alert, Button, Collapse, Descriptions, Divider, Form, Input, InputNumber, Select, Space, Switch } from 'antd';
 import { RadarChartOutlined, ReloadOutlined, SearchOutlined } from '@ant-design/icons';
-import dayjs from 'dayjs';
 
 import { FormField } from '@/components/form/rhf';
 import { UTLS_FINGERPRINT } from '@/schemas/primitives';
-import {
-  validateRealityClientVer,
-  validateRealityMaxClientVer,
-  validateRealityTarget,
-} from '@/lib/xray/stream-wire-normalize';
+import { validateRealityTarget } from '@/lib/xray/stream-wire-normalize';
 import type { RealityScanResult } from '@/generated/types';
-import RealityTargetScannerModal, {
-  MLDSA65_MIN_CERT_CHAIN_BYTES,
-} from './RealityTargetScannerModal';
+import RealityTargetScannerModal from './RealityTargetScannerModal';
 
 interface RealityFormProps {
   saving: boolean;
   scanning: boolean;
   scanResult: RealityScanResult | null;
-  scanRealityTarget: (allowPrivate?: boolean) => void;
+  scanRealityTarget: () => void;
   scanRealityCandidates: (targets?: string) => Promise<RealityScanResult[]>;
-  applyRealityScanResult: (result: RealityScanResult, replaceServerNames?: boolean) => void;
+  applyRealityScanResult: (result: RealityScanResult) => void;
   randomizeShortIds: () => void;
   randomizeSpiderX: () => void;
   genRealityKeypair: () => void;
@@ -59,38 +39,7 @@ export default function RealityForm({
   clearMldsa65,
 }: RealityFormProps) {
   const { t } = useTranslation();
-  const { getFieldState, trigger } = useFormContext();
   const [scannerOpen, setScannerOpen] = useState(false);
-  const mldsa65Seed = useWatch({ name: 'streamSettings.realitySettings.mldsa65Seed' });
-  const mldsa65Verify = useWatch({
-    name: 'streamSettings.realitySettings.settings.mldsa65Verify',
-  });
-  const mldsa65Enabled =
-    (typeof mldsa65Seed === 'string' && mldsa65Seed.trim() !== '') ||
-    (typeof mldsa65Verify === 'string' && mldsa65Verify.trim() !== '');
-  const mldsaChainTooSmall =
-    !!scanResult &&
-    mldsa65Enabled &&
-    scanResult.certChainBytes > 0 &&
-    scanResult.certChainBytes < MLDSA65_MIN_CERT_CHAIN_BYTES;
-  /*
-   * An untrusted certificate (self-signed fronting service on the LAN) is still
-   * worth reading, so subject/issuer stay visible and only the verdict is added.
-   */
-  const certSummary = (r: RealityScanResult) => {
-    const who =
-      r.certSubject && r.certIssuer
-        ? `${r.certSubject} (${r.certIssuer})`
-        : r.certSubject || r.certIssuer;
-    if (!who) return '—';
-    return r.certValid ? who : `${who} — ${t('pages.inbounds.form.scanCertInvalid')}`;
-  };
-  const maxClientVerPath = 'streamSettings.realitySettings.maxClientVer';
-  const revalidateMaxClientVer = () => {
-    if (getFieldState(maxClientVerPath).error) {
-      void trigger(maxClientVerPath);
-    }
-  };
   return (
     <>
       <FormField
@@ -100,17 +49,16 @@ export default function RealityForm({
       >
         <Switch />
       </FormField>
-      <FormField
-        name={['streamSettings', 'realitySettings', 'xver']}
-        label={t('pages.inbounds.form.xver')}
-      >
+      <FormField name={['streamSettings', 'realitySettings', 'xver']} label={t('pages.inbounds.form.xver')}>
         <InputNumber min={0} />
       </FormField>
       <FormField
         name={['streamSettings', 'realitySettings', 'settings', 'fingerprint']}
         label="uTLS"
       >
-        <Select options={Object.values(UTLS_FINGERPRINT).map((fp) => ({ value: fp, label: fp }))} />
+        <Select
+          options={Object.values(UTLS_FINGERPRINT).map((fp) => ({ value: fp, label: fp }))}
+        />
       </FormField>
       <Form.Item
         label={t('pages.inbounds.form.target')}
@@ -129,11 +77,7 @@ export default function RealityForm({
           >
             <Input style={{ flex: 1 }} placeholder="example.com:443" />
           </FormField>
-          <Button
-            icon={<RadarChartOutlined />}
-            loading={scanning}
-            onClick={() => scanRealityTarget()}
-          >
+          <Button icon={<RadarChartOutlined />} loading={scanning} onClick={scanRealityTarget}>
             {t('pages.inbounds.form.scan')}
           </Button>
           <Button icon={<SearchOutlined />} onClick={() => setScannerOpen(true)}>
@@ -144,11 +88,7 @@ export default function RealityForm({
       {scanResult && (
         <Form.Item label=" " colon={false}>
           <Alert
-            type={
-              scanResult.feasible && !scanResult.privateTarget && !mldsaChainTooSmall
-                ? 'success'
-                : 'warning'
-            }
+            type={scanResult.feasible ? 'success' : 'warning'}
             showIcon
             title={
               scanResult.feasible
@@ -156,43 +96,21 @@ export default function RealityForm({
                 : scanResult.reason || t('pages.inbounds.form.scanNotFeasible')
             }
             description={
-              <>
-                {mldsaChainTooSmall && (
-                  <div style={{ marginBottom: 8 }}>
-                    {t('pages.inbounds.form.scanMldsaCertChainTooSmall', {
-                      length: scanResult.certChainBytes,
-                      min: MLDSA65_MIN_CERT_CHAIN_BYTES,
-                    })}
-                  </div>
-                )}
-                {scanResult.privateTarget && (
-                  <div style={{ marginBottom: 8 }}>{t('pages.inbounds.form.scanPrivateNote')}</div>
-                )}
-                <Descriptions size="small" column={1}>
-                  <Descriptions.Item label={t('pages.inbounds.form.scanSniUsed')}>
-                    {scanResult.host || '—'}
-                  </Descriptions.Item>
-                  <Descriptions.Item label="TLS">{scanResult.tlsVersion || '—'}</Descriptions.Item>
-                  <Descriptions.Item label="ALPN">{scanResult.alpn || '—'}</Descriptions.Item>
-                  <Descriptions.Item label={t('pages.inbounds.form.scanCurve')}>
-                    {scanResult.curveID || '—'}
-                  </Descriptions.Item>
-                  <Descriptions.Item label={t('pages.inbounds.form.scanCert')}>
-                    {certSummary(scanResult)}
-                  </Descriptions.Item>
-                  <Descriptions.Item label={t('pages.inbounds.form.scanCertExpiry')}>
-                    {scanResult.notAfter
-                      ? dayjs(scanResult.notAfter).format('YYYY-MM-DD HH:mm')
-                      : '—'}
-                  </Descriptions.Item>
-                  <Descriptions.Item label={t('pages.inbounds.form.scanCertChain')}>
-                    {scanResult.certChainBytes > 0 ? `${scanResult.certChainBytes} B` : '—'}
-                  </Descriptions.Item>
-                  <Descriptions.Item label={t('pages.inbounds.form.scanLatency')}>
-                    {scanResult.latencyMs > 0 ? `${scanResult.latencyMs} ms` : '—'}
-                  </Descriptions.Item>
-                </Descriptions>
-              </>
+              <Descriptions size="small" column={1}>
+                <Descriptions.Item label="TLS">{scanResult.tlsVersion || '—'}</Descriptions.Item>
+                <Descriptions.Item label="ALPN">{scanResult.alpn || '—'}</Descriptions.Item>
+                <Descriptions.Item label={t('pages.inbounds.form.scanCurve')}>
+                  {scanResult.curveID || '—'}
+                </Descriptions.Item>
+                <Descriptions.Item label={t('pages.inbounds.form.scanCert')}>
+                  {scanResult.certValid
+                    ? `${scanResult.certSubject} (${scanResult.certIssuer})`
+                    : t('pages.inbounds.form.scanCertInvalid')}
+                </Descriptions.Item>
+                <Descriptions.Item label={t('pages.inbounds.form.scanLatency')}>
+                  {scanResult.latencyMs > 0 ? `${scanResult.latencyMs} ms` : '—'}
+                </Descriptions.Item>
+              </Descriptions>
             }
           />
         </Form.Item>
@@ -209,42 +127,24 @@ export default function RealityForm({
       <FormField
         name={['streamSettings', 'realitySettings', 'minClientVer']}
         label={t('pages.inbounds.form.minClientVer')}
-        tooltip={t('pages.inbounds.form.minClientVerHint')}
-        onAfterChange={revalidateMaxClientVer}
-        rules={{
-          validate: (value) => {
-            const errKey = validateRealityClientVer(typeof value === 'string' ? value : '');
-            return errKey ? errKey : true;
-          },
-        }}
       >
-        <Input placeholder="x.y.z" />
+        <Input placeholder="26.3.27" />
       </FormField>
       <FormField
         name={['streamSettings', 'realitySettings', 'maxClientVer']}
         label={t('pages.inbounds.form.maxClientVer')}
-        tooltip={t('pages.inbounds.form.maxClientVerHint')}
-        rules={{
-          validate: (value, formValues) => {
-            const max = typeof value === 'string' ? value : '';
-            const min = formValues?.streamSettings?.realitySettings?.minClientVer;
-            const errKey = validateRealityMaxClientVer(max, typeof min === 'string' ? min : '');
-            return errKey ? errKey : true;
-          },
-        }}
       >
-        <Input placeholder="x.y.z" />
+        <Input placeholder="25.9.11" />
       </FormField>
       <Form.Item label={t('pages.inbounds.form.shortIds')}>
         <Space.Compact block style={{ display: 'flex' }}>
-          <FormField name={['streamSettings', 'realitySettings', 'shortIds']} noStyle>
+          <FormField
+            name={['streamSettings', 'realitySettings', 'shortIds']}
+            noStyle
+          >
             <Select mode="tags" tokenSeparators={[',']} style={{ flex: 1 }} />
           </FormField>
-          <Button
-            aria-label={t('regenerate')}
-            icon={<ReloadOutlined />}
-            onClick={randomizeShortIds}
-          />
+          <Button aria-label={t('regenerate')} icon={<ReloadOutlined />} onClick={randomizeShortIds} />
         </Space.Compact>
       </Form.Item>
       <Form.Item
@@ -252,14 +152,13 @@ export default function RealityForm({
         tooltip={t('pages.inbounds.form.spiderXHint')}
       >
         <Space.Compact block style={{ display: 'flex' }}>
-          <FormField name={['streamSettings', 'realitySettings', 'settings', 'spiderX']} noStyle>
+          <FormField
+            name={['streamSettings', 'realitySettings', 'settings', 'spiderX']}
+            noStyle
+          >
             <Input style={{ flex: 1 }} />
           </FormField>
-          <Button
-            aria-label={t('regenerate')}
-            icon={<ReloadOutlined />}
-            onClick={randomizeSpiderX}
-          />
+          <Button aria-label={t('regenerate')} icon={<ReloadOutlined />} onClick={randomizeSpiderX} />
         </Space.Compact>
       </Form.Item>
       <FormField
@@ -279,9 +178,7 @@ export default function RealityForm({
           <Button type="primary" loading={saving} onClick={genRealityKeypair}>
             {t('pages.inbounds.form.getNewCert')}
           </Button>
-          <Button danger onClick={clearRealityKeypair}>
-            {t('clear')}
-          </Button>
+          <Button danger onClick={clearRealityKeypair}>{t('clear')}</Button>
         </Space>
       </Form.Item>
       <FormField
@@ -301,9 +198,7 @@ export default function RealityForm({
           <Button type="primary" loading={saving} onClick={genMldsa65}>
             {t('pages.inbounds.form.getNewSeed')}
           </Button>
-          <Button danger onClick={clearMldsa65}>
-            {t('clear')}
-          </Button>
+          <Button danger onClick={clearMldsa65}>{t('clear')}</Button>
         </Space>
       </Form.Item>
       <FormField
@@ -358,8 +253,7 @@ export default function RealityForm({
         open={scannerOpen}
         onClose={() => setScannerOpen(false)}
         scanRealityCandidates={scanRealityCandidates}
-        onPick={(r) => applyRealityScanResult(r, true)}
-        mldsa65Enabled={mldsa65Enabled}
+        onPick={applyRealityScanResult}
       />
     </>
   );

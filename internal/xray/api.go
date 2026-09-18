@@ -171,18 +171,52 @@ func (x *XrayAPI) DelInbound(tag string) error {
 	return err
 }
 
-// ValidateOutboundConfig builds an outbound JSON object through the vendored
-// xray-core config loader, surfacing the exact error the core would raise at
-// startup — notably v26.7.11's refusal of unencrypted vless/trojan outbounds
-// whose server address is a public IP or domain.
-func ValidateOutboundConfig(outbound []byte) error {
-	ensureXrayAssetLocation()
+const legacyPublicPlaintextVLESSGuard = "vless without TLS or other encryption is prohibited unless the server address is a private IP or domain"
 
+// embeddedOutboundBuildError validates an outbound through the xray-core
+// library linked into the panel. The deployed Heimdall core can intentionally
+// differ from that library, so compatibility exceptions must be handled by the
+// callers below rather than by weakening unrelated validation errors.
+func embeddedOutboundBuildError(outbound []byte) error {
 	detour := new(conf.OutboundDetourConfig)
 	if err := json.Unmarshal(outbound, detour); err != nil {
 		return err
 	}
 	_, err := detour.Build()
+	return err
+}
+
+// isLegacyPublicPlaintextVLESSGuard reports the one embedded-core rejection
+// that is incompatible with Heimdall's deployed custom core. The protocol
+// check prevents the exception from swallowing an unrelated error that merely
+// happens to contain the same text.
+func isLegacyPublicPlaintextVLESSGuard(outbound []byte, err error) bool {
+	if err == nil || !strings.Contains(err.Error(), legacyPublicPlaintextVLESSGuard) {
+		return false
+	}
+	var meta struct {
+		Protocol string `json:"protocol"`
+	}
+	return json.Unmarshal(outbound, &meta) == nil && strings.EqualFold(strings.TrimSpace(meta.Protocol), "vless")
+}
+
+// OutboundRequiresExternalCoreRestart reports whether an outbound can only be
+// built by Heimdall's deployed custom core. Such an outbound must bypass the
+// panel's embedded builder during hot apply and reach the external core through
+// a full process restart.
+func OutboundRequiresExternalCoreRestart(outbound []byte) bool {
+	err := embeddedOutboundBuildError(outbound)
+	return isLegacyPublicPlaintextVLESSGuard(outbound, err)
+}
+
+// ValidateOutboundConfig validates an outbound through the xray-core library
+// linked into the panel while preserving the deployed custom core's support for
+// public plaintext VLESS outbounds. Every other parse/build error remains fatal.
+func ValidateOutboundConfig(outbound []byte) error {
+	err := embeddedOutboundBuildError(outbound)
+	if isLegacyPublicPlaintextVLESSGuard(outbound, err) {
+		return nil
+	}
 	return err
 }
 
@@ -192,8 +226,6 @@ func (x *XrayAPI) AddOutbound(outbound []byte) error {
 		return common.NewError("xray HandlerServiceClient is not initialized")
 	}
 	client := *x.HandlerServiceClient
-
-	ensureXrayAssetLocation()
 
 	conf := new(conf.OutboundDetourConfig)
 	if err := json.Unmarshal(outbound, conf); err != nil {
@@ -345,10 +377,6 @@ func (x *XrayAPI) TestRoute(req RouteTestRequest) (*RouteTestResult, error) {
 		return nil, common.NewError("xray RoutingServiceClient is not initialized")
 	}
 
-	if req.Port < 0 || req.Port > math.MaxUint16 {
-		return nil, common.NewErrorf("invalid port: %d", req.Port)
-	}
-
 	network := xnet.Network_TCP
 	if strings.EqualFold(req.Network, "udp") {
 		network = xnet.Network_UDP
@@ -465,90 +493,11 @@ func collectStringSlice(value any) []string {
 	}
 }
 
-// legacyShadowsocksAccountType is the type URL serial.ToTypedMessage stamps on
-// a pre-2022 shadowsocks account, which identifies the one inbound whose user
-// list tolerates duplicate emails.
-const legacyShadowsocksAccountType = "xray.proxy.shadowsocks.Account"
-
-// shadowsocks2022Ciphers are the methods that select xray's shadowsocks-2022
-// inbound (sing's shadowaead_2022 list). They take a different account type
-// than the legacy AEAD ciphers, and the running inbound casts the account it
-// receives without checking, so a wrong guess takes the whole core down.
-var shadowsocks2022Ciphers = map[string]struct{}{
-	"2022-blake3-aes-128-gcm":       {},
-	"2022-blake3-aes-256-gcm":       {},
-	"2022-blake3-chacha20-poly1305": {},
-}
-
-// shadowsocksCipherName resolves the cipher a shadowsocks user's account must
-// be built for. Panel-built user maps carry it under "cipher"; client objects
-// taken verbatim from an inbound's settings carry the inbound's method under
-// "method" instead (HealShadowsocksClientMethods writes it onto every
-// legacy-cipher client).
-func shadowsocksCipherName(user map[string]any) (string, error) {
-	cipher, err := getOptionalUserString(user, "cipher")
-	if err != nil {
-		return "", err
-	}
-	if cipher != "" {
-		return cipher, nil
-	}
-	return getOptionalUserString(user, "method")
-}
-
-// reverseTag reads a vless reverse proxy tag from either shape a caller can
-// carry: the settings JSON object, or a typed client value marshalling alike.
-func reverseTag(value any) string {
-	if value == nil {
-		return ""
-	}
-	raw, err := json.Marshal(value)
-	if err != nil {
-		return ""
-	}
-	var parsed struct {
-		Tag string `json:"tag"`
-	}
-	if json.Unmarshal(raw, &parsed) != nil {
-		return ""
-	}
-	return parsed.Tag
-}
-
-// shadowsocksCipherType mirrors xray-core's infra/conf cipherFromString,
-// aliases and case-insensitivity included, so the account the panel builds for
-// a live user matches the one the core built for that inbound from its config.
-func shadowsocksCipherType(cipher string) shadowsocks.CipherType {
-	switch strings.ToLower(cipher) {
-	case "aes-128-gcm", "aead_aes_128_gcm":
-		return shadowsocks.CipherType_AES_128_GCM
-	case "aes-256-gcm", "aead_aes_256_gcm":
-		return shadowsocks.CipherType_AES_256_GCM
-	case "chacha20-poly1305", "aead_chacha20_poly1305", "chacha20-ietf-poly1305":
-		return shadowsocks.CipherType_CHACHA20_POLY1305
-	case "xchacha20-poly1305", "aead_xchacha20_poly1305", "xchacha20-ietf-poly1305":
-		return shadowsocks.CipherType_XCHACHA20_POLY1305
-	default:
-		return shadowsocks.CipherType_UNKNOWN
-	}
-}
-
-// isShadowsocks2022Cipher reports whether the method selects the
-// shadowsocks-2022 inbound rather than the legacy AEAD one.
-func isShadowsocks2022Cipher(cipher string) bool {
-	_, ok := shadowsocks2022Ciphers[strings.ToLower(cipher)]
-	return ok
-}
-
 // buildUserAccount constructs the typed xray account for a user of the given
 // protocol. It returns (nil, nil) for protocols that cannot be altered live so
 // callers skip the AlterInbound call. WireGuard keys must be converted to the
 // hex form xray's wireguard proxy expects (its ParseKey uses hex.DecodeString),
 // unlike the file-config path which accepts base64 and converts internally.
-// Shadowsocks is resolved strictly from the inbound's cipher: the legacy and
-// 2022 inbounds take different account types and cast whatever they receive
-// without checking, so an unrecognized cipher is an error rather than a guess
-// that would panic the core and kill every connection on the server.
 func buildUserAccount(protocolName string, user map[string]any) (*serial.TypedMessage, error) {
 	switch protocolName {
 	case "vmess":
@@ -574,11 +523,6 @@ func buildUserAccount(protocolName string, user map[string]any) (*serial.TypedMe
 		vlessAccount := &vless.Account{
 			Id:   userID,
 			Flow: userFlow,
-		}
-		// RemoveUser also drops the account's reverse outbound handler, and
-		// GetReverse only rebuilds it from the tag a re-added account carries.
-		if tag := reverseTag(user["reverse"]); tag != "" {
-			vlessAccount.Reverse = &vless.Reverse{Tag: tag}
 		}
 		if testseedVal, ok := user["testseed"]; ok {
 			if testseedArr, ok := testseedVal.([]any); ok && len(testseedArr) >= 4 {
@@ -611,7 +555,7 @@ func buildUserAccount(protocolName string, user map[string]any) (*serial.TypedMe
 			Password: password,
 		}), nil
 	case "shadowsocks":
-		cipher, err := shadowsocksCipherName(user)
+		cipher, err := getOptionalUserString(user, "cipher")
 		if err != nil {
 			return nil, err
 		}
@@ -621,19 +565,28 @@ func buildUserAccount(protocolName string, user map[string]any) (*serial.TypedMe
 			return nil, err
 		}
 
-		if isShadowsocks2022Cipher(cipher) {
-			return serial.ToTypedMessage(&shadowsocks_2022.Account{
-				Key: password,
-			}), nil
+		var ssCipherType shadowsocks.CipherType
+		switch cipher {
+		case "aes-128-gcm":
+			ssCipherType = shadowsocks.CipherType_AES_128_GCM
+		case "aes-256-gcm":
+			ssCipherType = shadowsocks.CipherType_AES_256_GCM
+		case "chacha20-poly1305", "chacha20-ietf-poly1305":
+			ssCipherType = shadowsocks.CipherType_CHACHA20_POLY1305
+		case "xchacha20-poly1305", "xchacha20-ietf-poly1305":
+			ssCipherType = shadowsocks.CipherType_XCHACHA20_POLY1305
+		default:
+			ssCipherType = shadowsocks.CipherType_UNKNOWN
 		}
 
-		ssCipherType := shadowsocksCipherType(cipher)
-		if ssCipherType == shadowsocks.CipherType_UNKNOWN {
-			return nil, common.NewErrorf("shadowsocks: unknown cipher %q, cannot build an account for the running inbound", cipher)
+		if ssCipherType != shadowsocks.CipherType_UNKNOWN {
+			return serial.ToTypedMessage(&shadowsocks.Account{
+				Password:   password,
+				CipherType: ssCipherType,
+			}), nil
 		}
-		return serial.ToTypedMessage(&shadowsocks.Account{
-			Password:   password,
-			CipherType: ssCipherType,
+		return serial.ToTypedMessage(&shadowsocks_2022.Account{
+			Key: password,
 		}), nil
 	case "hysteria":
 		auth, err := getRequiredUserString(user, "auth")
@@ -684,11 +637,7 @@ func buildUserAccount(protocolName string, user map[string]any) (*serial.TypedMe
 	}
 }
 
-// AddUser adds a user to an inbound in the Xray core using the specified
-// protocol and user data. On a legacy shadowsocks inbound the add first drops
-// any existing holder of the email: that is the one inbound whose validator
-// does not reject a duplicate email, and a later removal would then drop just
-// one of the two registrations, leaving a disabled client able to connect.
+// AddUser adds a user to an inbound in the Xray core using the specified protocol and user data.
 func (x *XrayAPI) AddUser(Protocol string, inboundTag string, user map[string]any) error {
 	userEmail, err := getRequiredUserString(user, "email")
 	if err != nil {
@@ -708,10 +657,6 @@ func (x *XrayAPI) AddUser(Protocol string, inboundTag string, user map[string]an
 	}
 	client := *x.HandlerServiceClient
 
-	if account.Type == legacyShadowsocksAccountType {
-		_ = x.RemoveUser(inboundTag, userEmail)
-	}
-
 	ctx, cancel := context.WithTimeout(context.Background(), handlerRPCTimeout)
 	defer cancel()
 	_, err = client.AlterInbound(ctx, &command.AlterInboundRequest{
@@ -728,11 +673,6 @@ func (x *XrayAPI) AddUser(Protocol string, inboundTag string, user map[string]an
 
 // RemoveUser removes a user from an inbound in the Xray core by email.
 func (x *XrayAPI) RemoveUser(inboundTag, email string) error {
-	if x.HandlerServiceClient == nil {
-		return common.NewError("xray HandlerServiceClient is not initialized")
-	}
-	client := *x.HandlerServiceClient
-
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
@@ -742,7 +682,7 @@ func (x *XrayAPI) RemoveUser(inboundTag, email string) error {
 		Operation: serial.ToTypedMessage(op),
 	}
 
-	_, err := client.AlterInbound(ctx, req)
+	_, err := (*x.HandlerServiceClient).AlterInbound(ctx, req)
 	if err != nil {
 		return fmt.Errorf("failed to remove user: %w", err)
 	}
@@ -750,13 +690,7 @@ func (x *XrayAPI) RemoveUser(inboundTag, email string) error {
 	return nil
 }
 
-// GetTraffic queries traffic statistics from the Xray core and reports what
-// accrued since the previous call; the counters themselves are never reset.
-// The first call of a process only records baselines, since it may be reading
-// counters that already hold traffic the panel cannot attribute. After that a
-// name the panel has not seen — xray creates a counter on a user's first use —
-// and a counter that moved backwards because the core restarted both count
-// from zero, so no client's traffic is dropped for a whole polling interval.
+// GetTraffic queries traffic statistics from the Xray core, optionally resetting counters.
 func (x *XrayAPI) GetTraffic() ([]*Traffic, []*ClientTraffic, error) {
 	if x.grpcClient == nil {
 		return nil, nil, common.NewError("xray api is not initialized")
@@ -778,16 +712,12 @@ func (x *XrayAPI) GetTraffic() ([]*Traffic, []*ClientTraffic, error) {
 	tagTrafficMap := make(map[string]*Traffic)
 	emailTrafficMap := make(map[string]*ClientTraffic)
 
-	baselinePass := len(x.StatsLastValues) == 0
-
 	for _, stat := range resp.GetStat() {
 		lastValue, ok := x.StatsLastValues[stat.Name]
 		x.StatsLastValues[stat.Name] = stat.Value
-		if baselinePass {
-			continue
-		}
 		if !ok || stat.Value < lastValue {
-			lastValue = 0
+			// skip first time of seen stat
+			continue
 		}
 		value := stat.Value - lastValue
 		if matches := trafficRegex.FindStringSubmatch(stat.Name); len(matches) == 4 {

@@ -44,15 +44,12 @@ describe('propagateOutboundTagRename', () => {
 
   it('updates sockopt dialerProxy references in other outbounds', () => {
     const t = baseTemplate();
-    (
-      t.outbounds![1] as { streamSettings?: { sockopt?: { dialerProxy?: string } } }
-    ).streamSettings = {
+    (t.outbounds![1] as { streamSettings?: { sockopt?: { dialerProxy?: string } } }).streamSettings = {
       sockopt: { dialerProxy: 'To-External-Proxy' },
     };
     propagateOutboundTagRename(t, 'To-External-Proxy', 'external-vps');
-    const dialerProxy = (
-      t.outbounds![1] as { streamSettings?: { sockopt?: { dialerProxy?: string } } }
-    ).streamSettings?.sockopt?.dialerProxy;
+    const dialerProxy = (t.outbounds![1] as { streamSettings?: { sockopt?: { dialerProxy?: string } } })
+      .streamSettings?.sockopt?.dialerProxy;
     expect(dialerProxy).toBe('external-vps');
   });
 

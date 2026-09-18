@@ -5,15 +5,11 @@ import type { ColumnsType } from 'antd/es/table';
 
 import type { RealityScanResult } from '@/generated/types';
 
-// xray-core ML-DSA-65 REALITY min peer cert-chain size (not defined in this repo).
-export const MLDSA65_MIN_CERT_CHAIN_BYTES = 3500;
-
 interface RealityTargetScannerModalProps {
   open: boolean;
   onClose: () => void;
   scanRealityCandidates: (targets?: string) => Promise<RealityScanResult[]>;
   onPick: (result: RealityScanResult) => void;
-  mldsa65Enabled?: boolean;
 }
 
 export default function RealityTargetScannerModal({
@@ -21,18 +17,16 @@ export default function RealityTargetScannerModal({
   onClose,
   scanRealityCandidates,
   onPick,
-  mldsa65Enabled = false,
 }: RealityTargetScannerModalProps) {
   const { t } = useTranslation();
   const [loading, setLoading] = useState(false);
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<RealityScanResult[]>([]);
   const scanRef = useRef(scanRealityCandidates);
-  useEffect(() => {
-    scanRef.current = scanRealityCandidates;
-  });
+  scanRef.current = scanRealityCandidates;
 
-  const applyScan = useCallback(async (targets?: string) => {
+  const runScan = useCallback(async (targets?: string) => {
+    setLoading(true);
     try {
       setResults(await scanRef.current(targets));
     } finally {
@@ -40,29 +34,11 @@ export default function RealityTargetScannerModal({
     }
   }, []);
 
-  const runScan = useCallback(
-    (targets?: string) => {
-      setLoading(true);
-      setResults([]);
-      void applyScan(targets);
-    },
-    [applyScan],
-  );
-
-  // Clearing the previous results is done during render so the auto-scan effect
-  // carries only the request itself.
-  const [scannedOpen, setScannedOpen] = useState(false);
-  if (open !== scannedOpen) {
-    setScannedOpen(open);
-    if (open) {
-      setResults([]);
-      setLoading(true);
-    }
-  }
-
   useEffect(() => {
-    if (open) void applyScan();
-  }, [open, applyScan]);
+    if (!open) return;
+    setResults([]);
+    runScan();
+  }, [open, runScan]);
 
   const columns: ColumnsType<RealityScanResult> = [
     {
@@ -73,9 +49,7 @@ export default function RealityTargetScannerModal({
       render: (target: string, row) => (
         <Tooltip title={row.ip ? `${target} — ${row.ip}` : target}>
           <div style={{ lineHeight: 1.25 }}>
-            <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              {target}
-            </div>
+            <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{target}</div>
             {row.ip ? <div style={{ color: '#999', fontSize: 12 }}>{row.ip}</div> : null}
           </div>
         </Tooltip>
@@ -132,28 +106,6 @@ export default function RealityTargetScannerModal({
         ),
     },
     {
-      title: t('pages.inbounds.form.scanCertChain'),
-      dataIndex: 'certChainBytes',
-      key: 'certChainBytes',
-      width: 100,
-      render: (bytes: number) => {
-        if (!bytes) return '—';
-        if (mldsa65Enabled && bytes < MLDSA65_MIN_CERT_CHAIN_BYTES) {
-          return (
-            <Tooltip
-              title={t('pages.inbounds.form.scanMldsaCertChainTooSmall', {
-                length: bytes,
-                min: MLDSA65_MIN_CERT_CHAIN_BYTES,
-              })}
-            >
-              <Tag color="warning">{bytes} B</Tag>
-            </Tooltip>
-          );
-        }
-        return `${bytes} B`;
-      },
-    },
-    {
       title: t('pages.inbounds.form.scanLatency'),
       dataIndex: 'latencyMs',
       key: 'latencyMs',
@@ -192,7 +144,7 @@ export default function RealityTargetScannerModal({
         </Button>,
       ]}
       title={t('pages.inbounds.form.scanModalTitle')}
-      width={1080}
+      width={960}
     >
       <Space orientation="vertical" size="small" style={{ width: '100%' }}>
         <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>

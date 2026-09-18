@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button, Divider, Input, Modal, QRCode, message } from 'antd';
 import * as OTPAuth from 'otpauth';
@@ -32,25 +32,29 @@ export default function TwoFactorModal({
   const { t } = useTranslation();
   const [messageApi, messageContextHolder] = message.useMessage();
   const [enteredCode, setEnteredCode] = useState('');
+  const [qrValue, setQrValue] = useState('');
+  const totpRef = useRef<OTPAuth.TOTP | null>(null);
 
-  const totp = useMemo(() => {
-    if (!open || !token) return null;
-    return new OTPAuth.TOTP({
-      issuer: '3x-ui',
-      label: 'Administrator',
-      algorithm: 'SHA1',
-      digits: 6,
-      period: 30,
-      secret: token,
-    });
+  useEffect(() => {
+    if (!open) return;
+     
+    setEnteredCode('');
+    totpRef.current = null;
+    setQrValue('');
+    if (token) {
+      const totp = new OTPAuth.TOTP({
+        issuer: 'HEIMDALL',
+        label: 'Administrator',
+        algorithm: 'SHA1',
+        digits: 6,
+        period: 30,
+        secret: token,
+      });
+      totpRef.current = totp;
+      setQrValue(totp.toString());
+    }
+     
   }, [open, token]);
-  const qrValue = totp ? totp.toString() : '';
-
-  const [wasOpen, setWasOpen] = useState(false);
-  if (open !== wasOpen) {
-    setWasOpen(open);
-    if (open) setEnteredCode('');
-  }
 
   function close(success: boolean, code = '') {
     onConfirm(success, code);
@@ -61,17 +65,15 @@ export default function TwoFactorModal({
   function onOk() {
     const codeOk = TotpCodeSchema.safeParse(enteredCode);
     if (!codeOk.success) {
-      messageApi.error(
-        t(codeOk.error.issues[0]?.message ?? 'pages.settings.security.twoFactorModalError'),
-      );
+      messageApi.error(t(codeOk.error.issues[0]?.message ?? 'pages.settings.security.twoFactorModalError'));
       return;
     }
     if (type === 'confirm' && !token) {
       close(true, codeOk.data);
       return;
     }
-    if (!totp) return;
-    if (totp.generate() === codeOk.data) {
+    if (!totpRef.current) return;
+    if (totpRef.current.generate() === codeOk.data) {
       close(true);
     } else {
       messageApi.error(t('pages.settings.security.twoFactorModalError'));
@@ -95,66 +97,49 @@ export default function TwoFactorModal({
         title={title}
         closable
         onCancel={onCancel}
-        footer={[
-          <Button key="cancel" onClick={onCancel}>
-            {t('cancel')}
-          </Button>,
-          <Button
-            key="ok"
-            type="primary"
-            disabled={!TotpCodeSchema.safeParse(enteredCode).success}
-            onClick={onOk}
+      footer={[
+        <Button key="cancel" onClick={onCancel}>{t('cancel')}</Button>,
+        <Button key="ok" type="primary" disabled={!TotpCodeSchema.safeParse(enteredCode).success} onClick={onOk}>
+          {t('confirm')}
+        </Button>,
+      ]}
+    >
+      {type === 'set' ? (
+        <>
+          <p>{t('pages.settings.security.twoFactorModalSteps')}</p>
+          <Divider />
+          <p>{t('pages.settings.security.twoFactorModalFirstStep')}</p>
+          <div
+            className="qr-wrap"
+            role="button"
+            tabIndex={0}
+            aria-label={t('copy')}
+            onClick={copyToken}
+            onKeyDown={activateOnKey(copyToken)}
           >
-            {t('confirm')}
-          </Button>,
-        ]}
-      >
-        {type === 'set' ? (
-          <>
-            <p>{t('pages.settings.security.twoFactorModalSteps')}</p>
-            <Divider />
-            <p>{t('pages.settings.security.twoFactorModalFirstStep')}</p>
-            <div
-              className="qr-wrap"
-              role="button"
-              tabIndex={0}
-              aria-label={t('copy')}
-              onClick={copyToken}
-              onKeyDown={activateOnKey(copyToken)}
-            >
-              <QRCode
-                className="qr-code"
-                value={qrValue}
-                size={180}
-                type="svg"
-                bordered={false}
-                color="#000000"
-                bgColor="#ffffff"
-                errorLevel="L"
-                title={t('copy')}
-              />
-              <span className="qr-token">{token}</span>
-            </div>
-            <Divider />
-            <p>{t('pages.settings.security.twoFactorModalSecondStep')}</p>
-            <Input
-              value={enteredCode}
-              onChange={(e) => setEnteredCode(e.target.value)}
-              style={{ width: '100%' }}
-              aria-label={t('twoFactorCode')}
+            <QRCode
+              className="qr-code"
+              value={qrValue}
+              size={180}
+              type="svg"
+              bordered={false}
+              color="#000000"
+              bgColor="#ffffff"
+              errorLevel="L"
+              title={t('copy')}
             />
-          </>
-        ) : (
-          <>
-            <p>{description}</p>
-            <Input
-              value={enteredCode}
-              onChange={(e) => setEnteredCode(e.target.value)}
-              style={{ width: '100%' }}
-              aria-label={t('twoFactorCode')}
-            />
-          </>
-        )}
+            <span className="qr-token">{token}</span>
+          </div>
+          <Divider />
+          <p>{t('pages.settings.security.twoFactorModalSecondStep')}</p>
+          <Input value={enteredCode} onChange={(e) => setEnteredCode(e.target.value)} style={{ width: '100%' }} aria-label={t('twoFactorCode')} />
+        </>
+      ) : (
+        <>
+          <p>{description}</p>
+          <Input value={enteredCode} onChange={(e) => setEnteredCode(e.target.value)} style={{ width: '100%' }} aria-label={t('twoFactorCode')} />
+        </>
+      )}
       </Modal>
     </>
   );

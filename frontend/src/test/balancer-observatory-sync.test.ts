@@ -3,20 +3,13 @@ import { describe, expect, it } from 'vitest';
 import { syncObservatories } from '@/pages/xray/balancers/balancer-helpers';
 import type { XraySettingsValue } from '@/hooks/useXraySetting';
 
-function tpl(
-  routing: Record<string, unknown>,
-  extra: Record<string, unknown> = {},
-): XraySettingsValue {
+function tpl(routing: Record<string, unknown>, extra: Record<string, unknown> = {}): XraySettingsValue {
   return { routing, ...extra } as unknown as XraySettingsValue;
 }
 
 type ExpectedObserver = 'none' | 'observatory' | 'burstObservatory';
 
-function expectObserver(
-  t: XraySettingsValue,
-  expected: ExpectedObserver,
-  selectors: string[] = [],
-) {
+function expectObserver(t: XraySettingsValue, expected: ExpectedObserver, selectors: string[] = []) {
   if (expected === 'none') {
     expect(t.observatory).toBeUndefined();
     expect(t.burstObservatory).toBeUndefined();
@@ -26,17 +19,13 @@ function expectObserver(
   if (expected === 'observatory') {
     expect(t.observatory).toBeDefined();
     expect(t.burstObservatory).toBeUndefined();
-    expect(new Set((t.observatory as { subjectSelector: string[] }).subjectSelector)).toEqual(
-      new Set(selectors),
-    );
+    expect(new Set((t.observatory as { subjectSelector: string[] }).subjectSelector)).toEqual(new Set(selectors));
     return;
   }
 
   expect(t.observatory).toBeUndefined();
   expect(t.burstObservatory).toBeDefined();
-  expect(new Set((t.burstObservatory as { subjectSelector: string[] }).subjectSelector)).toEqual(
-    new Set(selectors),
-  );
+  expect(new Set((t.burstObservatory as { subjectSelector: string[] }).subjectSelector)).toEqual(new Set(selectors));
 }
 
 // Observatory sections have no reload API in xray-core, so creating one turns
@@ -66,14 +55,7 @@ describe('syncObservatories', () => {
     },
     {
       name: 'roundRobin with fallback',
-      balancers: [
-        {
-          tag: 'rr',
-          selector: ['rr-out'],
-          fallbackTag: 'direct',
-          strategy: { type: 'roundRobin' },
-        },
-      ],
+      balancers: [{ tag: 'rr', selector: ['rr-out'], fallbackTag: 'direct', strategy: { type: 'roundRobin' } }],
       expected: 'burstObservatory' as const,
       selectors: ['rr-out'],
     },
@@ -85,9 +67,7 @@ describe('syncObservatories', () => {
     },
     {
       name: 'leastPing with fallback',
-      balancers: [
-        { tag: 'lp', selector: ['lp-out'], fallbackTag: 'direct', strategy: { type: 'leastPing' } },
-      ],
+      balancers: [{ tag: 'lp', selector: ['lp-out'], fallbackTag: 'direct', strategy: { type: 'leastPing' } }],
       expected: 'observatory' as const,
       selectors: ['lp-out'],
     },
@@ -99,9 +79,7 @@ describe('syncObservatories', () => {
     },
     {
       name: 'leastLoad with fallback',
-      balancers: [
-        { tag: 'll', selector: ['ll-out'], fallbackTag: 'direct', strategy: { type: 'leastLoad' } },
-      ],
+      balancers: [{ tag: 'll', selector: ['ll-out'], fallbackTag: 'direct', strategy: { type: 'leastLoad' } }],
       expected: 'burstObservatory' as const,
       selectors: ['ll-out'],
     },
@@ -151,12 +129,7 @@ describe('syncObservatories', () => {
     {
       name: 'roundRobin fallback + roundRobin without fallback',
       balancers: [
-        {
-          tag: 'rrf',
-          selector: ['rr-fallback-out'],
-          fallbackTag: 'direct',
-          strategy: { type: 'roundRobin' },
-        },
+        { tag: 'rrf', selector: ['rr-fallback-out'], fallbackTag: 'direct', strategy: { type: 'roundRobin' } },
         { tag: 'rr', selector: ['rr-out'], strategy: { type: 'roundRobin' } },
       ],
       expected: 'burstObservatory' as const,
@@ -202,12 +175,7 @@ describe('syncObservatories', () => {
       name: 'leastPing + roundRobin fallback',
       balancers: [
         { tag: 'lp', selector: ['lp-out'], strategy: { type: 'leastPing' } },
-        {
-          tag: 'rrf',
-          selector: ['rr-fallback-out'],
-          fallbackTag: 'direct',
-          strategy: { type: 'roundRobin' },
-        },
+        { tag: 'rrf', selector: ['rr-fallback-out'], fallbackTag: 'direct', strategy: { type: 'roundRobin' } },
       ],
       expected: 'burstObservatory' as const,
       selectors: ['lp-out', 'rr-fallback-out'],
@@ -218,12 +186,7 @@ describe('syncObservatories', () => {
         { tag: 'random', selector: ['random-out'] },
         { tag: 'rr', selector: ['rr-out'], strategy: { type: 'roundRobin' } },
         { tag: 'rf', selector: ['random-fallback-out'], fallbackTag: 'direct' },
-        {
-          tag: 'rrf',
-          selector: ['rr-fallback-out'],
-          fallbackTag: 'direct',
-          strategy: { type: 'roundRobin' },
-        },
+        { tag: 'rrf', selector: ['rr-fallback-out'], fallbackTag: 'direct', strategy: { type: 'roundRobin' } },
         { tag: 'lp', selector: ['lp-out'], strategy: { type: 'leastPing' } },
         { tag: 'll', selector: ['ll-out'], strategy: { type: 'leastLoad' } },
       ],
@@ -254,30 +217,20 @@ describe('syncObservatories', () => {
   });
 
   it('does not create burstObservatory for roundRobin without fallback', () => {
-    const t = tpl({
-      balancers: [{ tag: 'b1', selector: ['a'], strategy: { type: 'roundRobin' } }],
-    });
+    const t = tpl({ balancers: [{ tag: 'b1', selector: ['a'], strategy: { type: 'roundRobin' } }] });
     syncObservatories(t);
     expect(t.burstObservatory).toBeUndefined();
   });
 
   it('creates burstObservatory for a random balancer with a fallbackTag (#5605)', () => {
-    const t = tpl({
-      balancers: [{ tag: 'OverProxy', selector: ['opera-proxy'], fallbackTag: 'warp' }],
-    });
+    const t = tpl({ balancers: [{ tag: 'OverProxy', selector: ['opera-proxy'], fallbackTag: 'warp' }] });
     syncObservatories(t);
     expect(t.burstObservatory).toBeDefined();
-    expect((t.burstObservatory as { subjectSelector: string[] }).subjectSelector).toEqual([
-      'opera-proxy',
-    ]);
+    expect((t.burstObservatory as { subjectSelector: string[] }).subjectSelector).toEqual(['opera-proxy']);
   });
 
   it('creates burstObservatory for roundRobin with a fallbackTag', () => {
-    const t = tpl({
-      balancers: [
-        { tag: 'b1', selector: ['a'], fallbackTag: 'warp', strategy: { type: 'roundRobin' } },
-      ],
-    });
+    const t = tpl({ balancers: [{ tag: 'b1', selector: ['a'], fallbackTag: 'warp', strategy: { type: 'roundRobin' } }] });
     syncObservatories(t);
     expect(t.burstObservatory).toBeDefined();
     expect((t.burstObservatory as { subjectSelector: string[] }).subjectSelector).toEqual(['a']);
@@ -359,12 +312,7 @@ describe('syncObservatories', () => {
         balancers: [
           { tag: 'lp', selector: ['least-ping-out'], strategy: { type: 'leastPing' } },
           { tag: 'rf', selector: ['random-fallback-out'], fallbackTag: 'direct' },
-          {
-            tag: 'rr',
-            selector: ['round-robin-fallback-out'],
-            fallbackTag: 'direct',
-            strategy: { type: 'roundRobin' },
-          },
+          { tag: 'rr', selector: ['round-robin-fallback-out'], fallbackTag: 'direct', strategy: { type: 'roundRobin' } },
         ],
       },
       { observatory: { subjectSelector: ['stale-least-ping-out'] } },
@@ -378,12 +326,7 @@ describe('syncObservatories', () => {
 
   it('does not keep no-fallback random selectors in an observer created by another balancer', () => {
     const t = tpl(
-      {
-        balancers: [
-          { tag: 'b1', selector: ['a'] },
-          { tag: 'b2', selector: ['b'], strategy: { type: 'leastLoad' } },
-        ],
-      },
+      { balancers: [{ tag: 'b1', selector: ['a'] }, { tag: 'b2', selector: ['b'], strategy: { type: 'leastLoad' } }] },
       { burstObservatory: { subjectSelector: ['stale'] } },
     );
     syncObservatories(t);
@@ -391,13 +334,10 @@ describe('syncObservatories', () => {
   });
 
   it('removes observatories when no balancer can use them', () => {
-    const t = tpl(
-      { balancers: [] },
-      {
-        observatory: { subjectSelector: ['a'] },
-        burstObservatory: { subjectSelector: ['a'] },
-      },
-    );
+    const t = tpl({ balancers: [] }, {
+      observatory: { subjectSelector: ['a'] },
+      burstObservatory: { subjectSelector: ['a'] },
+    });
     syncObservatories(t);
     expect(t.observatory).toBeUndefined();
     expect(t.burstObservatory).toBeUndefined();

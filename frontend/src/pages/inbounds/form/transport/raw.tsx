@@ -4,6 +4,7 @@ import { useFormContext, useWatch } from 'react-hook-form';
 
 import { HeaderMapEditor } from '@/components/form';
 import { FormField } from '@/components/form/rhf';
+import { createTcpHeaderForCamouflage } from '@/lib/xray/forms/transport/transport-foundation';
 
 export default function RawForm() {
   const { t } = useTranslation();
@@ -27,23 +28,7 @@ export default function RawForm() {
           onChange={(v) => {
             setValue(
               'streamSettings.tcpSettings.header',
-              v
-                ? {
-                    type: 'http',
-                    request: {
-                      version: '1.1',
-                      method: 'GET',
-                      path: ['/'],
-                      headers: {},
-                    },
-                    response: {
-                      version: '1.1',
-                      status: '200',
-                      reason: 'OK',
-                      headers: {},
-                    },
-                  }
-                : { type: 'none' },
+              createTcpHeaderForCamouflage(v),
             );
           }}
         />

@@ -48,7 +48,6 @@ interface SparklineProps {
   yTickStep?: number;
   tickCountX?: number;
   showTooltip?: boolean;
-  showLegend?: boolean;
   valueMin?: number;
   valueMax?: number | null;
   yFormatter?: (v: number) => string;
@@ -81,30 +80,13 @@ interface SparklineView {
   extremaPoints: ExtremaResult | null;
 }
 
-function hexToRgba(color: string, alpha: number): string {
-  const trimmed = color.trim();
-  const fn = trimmed.match(/^rgba?\(([^)]+)\)$/i);
-  if (fn) {
-    const parts = fn[1]
-      .split(/[,/]\s*|\s+/)
-      .filter(Boolean)
-      .map(Number);
-    if (parts.length >= 3 && parts.slice(0, 3).every((n) => Number.isFinite(n))) {
-      const baseAlpha = parts.length > 3 && Number.isFinite(parts[3]) ? parts[3] : 1;
-      return `rgba(${parts[0]}, ${parts[1]}, ${parts[2]}, ${baseAlpha * alpha})`;
-    }
-    return trimmed;
-  }
-  let h = trimmed;
+function hexToRgba(hex: string, alpha: number): string {
+  let h = hex.trim();
   if (h.startsWith('#')) h = h.slice(1);
-  if (h.length === 3)
-    h = h
-      .split('')
-      .map((c) => c + c)
-      .join('');
-  if (h.length !== 6) return trimmed;
+  if (h.length === 3) h = h.split('').map((c) => c + c).join('');
+  if (h.length !== 6) return hex;
   const int = Number.parseInt(h, 16);
-  if (Number.isNaN(int)) return trimmed;
+  if (Number.isNaN(int)) return hex;
   const r = (int >> 16) & 255;
   const g = (int >> 8) & 255;
   const b = int & 255;
@@ -117,14 +99,11 @@ function cssVar(el: HTMLElement, name: string, fallback: string): string {
 }
 
 function parseDash(dash: string, dpr: number): number[] {
-  return dash
-    .trim()
-    .split(/\s+/)
-    .map((n) => (Number(n) || 0) * dpr);
+  return dash.trim().split(/\s+/).map((n) => (Number(n) || 0) * dpr);
 }
 
 function dprOf(u: uPlot): number {
-  return u.width > 0 ? u.ctx.canvas.width / u.width : uPlot.pxRatio || 1;
+  return u.width > 0 ? u.ctx.canvas.width / u.width : (uPlot.pxRatio || 1);
 }
 
 export default function Sparkline(props: SparklineProps) {
@@ -150,7 +129,6 @@ export default function Sparkline(props: SparklineProps) {
     yTickStep = 25,
     tickCountX = 4,
     showTooltip = false,
-    showLegend = true,
     valueMin = 0,
     valueMax = 100,
     yFormatter = (v: number) => `${Math.round(v)}%`,
@@ -268,11 +246,9 @@ export default function Sparkline(props: SparklineProps) {
     extrema,
   };
   const cfgRef = useRef(cfg);
+  cfgRef.current = cfg;
   const viewRef = useRef<SparklineView>({ points, yDomain, yTicks, xTickIndexes, extremaPoints });
-  useEffect(() => {
-    cfgRef.current = cfg;
-    viewRef.current = { points, yDomain, yTicks, xTickIndexes, extremaPoints };
-  });
+  viewRef.current = { points, yDomain, yTicks, xTickIndexes, extremaPoints };
 
   const containerRef = useRef<HTMLDivElement>(null);
   const plotRef = useRef<uPlot | null>(null);
@@ -439,9 +415,7 @@ export default function Sparkline(props: SparklineProps) {
       }
       const pt = v.points[idx];
       const fmt = p.tooltipFormatter ?? p.yFormatter ?? ((x: number) => String(x));
-      const label = p.tooltipLabelFormatter
-        ? p.tooltipLabelFormatter(String(pt.label))
-        : String(pt.label);
+      const label = p.tooltipLabelFormatter ? p.tooltipLabelFormatter(String(pt.label)) : String(pt.label);
       const multi = hasSeries2 || hasSeries3;
 
       tooltipEl.textContent = '';
@@ -569,6 +543,10 @@ export default function Sparkline(props: SparklineProps) {
   }, [points, hasSeries2, hasSeries3, valueMin, valueMax]);
 
   useEffect(() => {
+    plotRef.current?.redraw(false);
+  });
+
+  useEffect(() => {
     const redraw = () => plotRef.current?.redraw(false);
     const moBody = new MutationObserver(redraw);
     moBody.observe(document.body, { attributes: true, attributeFilter: ['class'] });
@@ -581,11 +559,7 @@ export default function Sparkline(props: SparklineProps) {
   }, []);
 
   return (
-    <div
-      className="sparkline-container"
-      role={ariaSummary ? 'img' : undefined}
-      aria-label={ariaSummary || undefined}
-    >
+    <div className="sparkline-container" role={ariaSummary ? 'img' : undefined} aria-label={ariaSummary || undefined}>
       {extremaPoints && (
         <div className="sparkline-extrema" aria-hidden="true">
           <span className="extrema-item" style={{ color: maxColor }}>
@@ -596,12 +570,10 @@ export default function Sparkline(props: SparklineProps) {
           </span>
         </div>
       )}
-      {showLegend && legendItems.length > 0 && (
+      {legendItems.length > 0 && (
         <div className="sparkline-legend" aria-hidden="true">
           {legendItems.map((s) => (
-            <span key={s.name} className="extrema-item" style={{ color: s.color }}>
-              ● {s.name}
-            </span>
+            <span key={s.name} className="extrema-item" style={{ color: s.color }}>● {s.name}</span>
           ))}
         </div>
       )}

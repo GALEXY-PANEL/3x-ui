@@ -30,17 +30,11 @@ import { HttpError, httpRequest } from '@/api/http-init';
 import type { HttpResponse } from '@/api/http-init';
 
 const mockRequest = vi.mocked(httpRequest);
-const envelope = (data: unknown): HttpResponse => ({
-  ok: true,
-  status: 200,
-  statusText: 'OK',
-  data,
-});
+const envelope = (data: unknown): HttpResponse => ({ ok: true, status: 200, statusText: 'OK', data });
 
 describe('HttpUtil', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.spyOn(console, 'error').mockImplementation(() => undefined);
   });
 
   it('unwraps a success envelope and shows a success toast', async () => {
@@ -54,9 +48,7 @@ describe('HttpUtil', () => {
   });
 
   it('suppresses the success toast with silentSuccess but still warns on nodePending', async () => {
-    mockRequest.mockResolvedValue(
-      envelope({ success: true, msg: 'saved', obj: { nodePending: true } }),
-    );
+    mockRequest.mockResolvedValue(envelope({ success: true, msg: 'saved', obj: { nodePending: true } }));
 
     await HttpUtil.post('/x', { a: 1 }, { silentSuccess: true });
 
@@ -81,16 +73,13 @@ describe('HttpUtil', () => {
     expect(toast.error).not.toHaveBeenCalled();
   });
 
-  it('surfaces the backend error text from a thrown HttpError body (msg field)', async () => {
-    mockRequest.mockRejectedValue(
-      new HttpError(400, 'Bad Request', { success: false, msg: 'bad input' }),
-    );
+  it('maps a thrown HttpError to a failure Msg via response.data.message', async () => {
+    mockRequest.mockRejectedValue(new HttpError(400, 'Bad Request', { message: 'bad input' }));
 
     const msg = await HttpUtil.post('/x', undefined, { silent: true });
 
     expect(msg.success).toBe(false);
     expect(msg.msg).toBe('bad input');
-    expect(console.error).not.toHaveBeenCalled();
   });
 
   it('maps a thrown native error to a failure Msg via its message', async () => {
@@ -99,7 +88,6 @@ describe('HttpUtil', () => {
     const msg = await HttpUtil.get('/x', undefined, { silent: true });
 
     expect(msg.msg).toBe('Network down');
-    expect(console.error).not.toHaveBeenCalled();
   });
 
   it('returns "No response data" for an empty body', async () => {

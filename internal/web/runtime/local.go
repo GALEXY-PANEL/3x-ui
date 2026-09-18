@@ -8,11 +8,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/GALEXY-PANEL/3x-ui/v3/internal/amneziawg"
-	"github.com/GALEXY-PANEL/3x-ui/v3/internal/amneziawgnet"
 	"github.com/GALEXY-PANEL/3x-ui/v3/internal/database/model"
 	"github.com/GALEXY-PANEL/3x-ui/v3/internal/mtproto"
-	"github.com/GALEXY-PANEL/3x-ui/v3/internal/tuic"
 	"github.com/GALEXY-PANEL/3x-ui/v3/internal/xray"
 )
 
@@ -48,6 +45,67 @@ func (l *Local) withAPI(fn func(api *xray.XrayAPI) error) error {
 	return fn(&api)
 }
 
+func localRuntimeUserMap(ib *model.Inbound, userMap map[string]any) map[string]any {
+	if userMap == nil {
+		return nil
+	}
+	out := make(map[string]any, len(userMap))
+	for k, v := range userMap {
+		out[k] = v
+	}
+	if email, ok := out["email"].(string); ok {
+		out["email"] = model.RuntimeClientEmailForInbound(ib, email)
+	}
+	return out
+}
+
+func localRuntimeInbound(ib *model.Inbound) *model.Inbound {
+	if ib == nil || ib.Protocol == model.WireGuard || ib.Protocol == model.MTProto {
+		return ib
+	}
+
+	settings := map[string]any{}
+	if err := json.Unmarshal([]byte(ib.Settings), &settings); err != nil {
+		return ib
+	}
+
+	clients, ok := settings["clients"].([]any)
+	if !ok || len(clients) == 0 {
+		return ib
+	}
+
+	changed := false
+	for i := range clients {
+		clientMap, ok := clients[i].(map[string]any)
+		if !ok {
+			continue
+		}
+		email, ok := clientMap["email"].(string)
+		if !ok || strings.TrimSpace(email) == "" {
+			continue
+		}
+		nextEmail := model.RuntimeClientEmailForInbound(ib, email)
+		if nextEmail == email {
+			continue
+		}
+		clientMap["email"] = nextEmail
+		changed = true
+	}
+
+	if !changed {
+		return ib
+	}
+
+	nextSettings, err := json.Marshal(settings)
+	if err != nil {
+		return ib
+	}
+
+	nextInbound := *ib
+	nextInbound.Settings = string(nextSettings)
+	return &nextInbound
+}
+
 func (l *Local) AddInbound(_ context.Context, ib *model.Inbound) error {
 	if ib.Protocol == model.MTProto {
 		inst, ok := mtproto.InstanceFromInbound(ib)
@@ -56,43 +114,8 @@ func (l *Local) AddInbound(_ context.Context, ib *model.Inbound) error {
 		}
 		return mtproto.GetManager().Ensure(inst)
 	}
-	if ib.Protocol == model.AmneziaWG {
-		inst, ok := amneziawg.InstanceFromInbound(ib)
-		if !ok {
-			return nil
-		}
-		err := amneziawgnet.GetManager().Ensure(amneziawgnet.Desired{
-			Instance: inst,
-			Options: amneziawgnet.DeviceOptions{
-				HeaderProtectionKey:    inst.Obfuscation.HeaderProtectionKey,
-				ContentPaddingAddition: inst.Obfuscation.ContentPaddingAddition,
-				RekeyAfterTime:         inst.Obfuscation.RekeyAfterTime,
-				RekeyTimeout:           inst.Obfuscation.RekeyTimeout,
-				RejectAfterTime:        inst.Obfuscation.RejectAfterTime,
-				KeepaliveTimeout:       inst.Obfuscation.KeepaliveTimeout,
-				MaxHandshakeAttempts:   inst.Obfuscation.MaxHandshakeAttempts,
-				RandomTrailers:         inst.Obfuscation.RandomTrailers,
-				DisableCookies:         inst.Obfuscation.DisableCookies,
-			},
-		})
-		// A brand new inbound can be the first one to qualify for
-		// injectAmneziawgnetSocks's Xray-side relay inbound (e.g. its first
-		// valid peer). Ensure only updates the embedded Device -- flag Xray
-		// for a resync so the relay actually gets created within the next
-		// ApplyPendingRestart tick instead of only at the next full restart.
-		if l.deps.SetNeedRestart != nil {
-			l.deps.SetNeedRestart()
-		}
-		return err
-	}
-	if ib.Protocol == model.TUIC {
-		inst, ok := tuic.InstanceFromInbound(ib)
-		if !ok {
-			return nil
-		}
-		return tuic.GetManager().Ensure(inst)
-	}
-	body, err := json.MarshalIndent(ib.GenXrayInboundConfig(), "", "  ")
+	runtimeInbound := localRuntimeInbound(ib)
+	body, err := json.MarshalIndent(runtimeInbound.GenXrayInboundConfig(), "", "  ")
 	if err != nil {
 		return err
 	}
@@ -106,20 +129,6 @@ func (l *Local) DelInbound(_ context.Context, ib *model.Inbound) error {
 		mtproto.GetManager().Remove(ib.Id)
 		return nil
 	}
-	if ib.Protocol == model.AmneziaWG {
-		amneziawgnet.GetManager().Remove(ib.Id)
-		// The removed inbound may have been the only one backing Xray's
-		// injectAmneziawgnetSocks relay inbound for this tag -- flag a
-		// resync so the now-stale relay gets torn down promptly.
-		if l.deps.SetNeedRestart != nil {
-			l.deps.SetNeedRestart()
-		}
-		return nil
-	}
-	if ib.Protocol == model.TUIC {
-		tuic.GetManager().Remove(ib.Id)
-		return nil
-	}
 	return l.withAPI(func(api *xray.XrayAPI) error {
 		return api.DelInbound(ib.Tag)
 	})
@@ -128,12 +137,6 @@ func (l *Local) DelInbound(_ context.Context, ib *model.Inbound) error {
 func (l *Local) UpdateInbound(ctx context.Context, oldIb, newIb *model.Inbound) error {
 	if oldIb.Protocol == model.MTProto || newIb.Protocol == model.MTProto {
 		return l.updateMtprotoInbound(ctx, oldIb, newIb)
-	}
-	if oldIb.Protocol == model.AmneziaWG || newIb.Protocol == model.AmneziaWG {
-		return l.updateAmneziaWGInbound(ctx, oldIb, newIb)
-	}
-	if oldIb.Protocol == model.TUIC || newIb.Protocol == model.TUIC {
-		return l.updateTuicInbound(ctx, oldIb, newIb)
 	}
 	_ = l.DelInbound(ctx, oldIb)
 	if !newIb.Enable {
@@ -171,98 +174,21 @@ func (l *Local) updateMtprotoInbound(ctx context.Context, oldIb, newIb *model.In
 	return mtproto.GetManager().Ensure(inst)
 }
 
-// updateAmneziaWGInbound mirrors updateMtprotoInbound: it skips the
-// Remove+Ensure sequence a plain Del+Add would force so that, on an
-// AmneziaWG-to-AmneziaWG edit, Manager.Ensure's own fingerprint comparison
-// can reconfigure the running embedded Device in place via IpcSet instead
-// of always rebuilding it (see internal/amneziawgnet.Manager.ensureLocked --
-// only an address or effective-MTU change forces a rebuild there, S4
-// included, not a peer edit).
-//
-// Every exit path below only touches the embedded Device via
-// amneziawgnet.GetManager() -- none of it rebuilds Xray's own config, which
-// is what actually creates/removes injectAmneziawgnetSocks's relay inbound.
-// A peer edit that changes whether this inbound has a qualifying peer at
-// all (its first peer added, or its last one removed) must still get that
-// relay created or torn down, so flag Xray for a resync unconditionally
-// here rather than trying to enumerate which of the branches below need it.
-func (l *Local) updateAmneziaWGInbound(ctx context.Context, oldIb, newIb *model.Inbound) error {
-	if l.deps.SetNeedRestart != nil {
-		l.deps.SetNeedRestart()
-	}
-	if oldIb.Protocol == model.AmneziaWG && newIb.Protocol != model.AmneziaWG {
-		amneziawgnet.GetManager().Remove(oldIb.Id)
-		if !newIb.Enable {
-			return nil
-		}
-		return l.AddInbound(ctx, newIb)
-	}
-	if oldIb.Protocol != model.AmneziaWG {
-		_ = l.DelInbound(ctx, oldIb)
-	}
-	if !newIb.Enable {
-		amneziawgnet.GetManager().Remove(newIb.Id)
-		return nil
-	}
-	inst, ok := amneziawg.InstanceFromInbound(newIb)
-	if !ok {
-		amneziawgnet.GetManager().Remove(newIb.Id)
-		return nil
-	}
-	return amneziawgnet.GetManager().Ensure(amneziawgnet.Desired{
-		Instance: inst,
-		Options: amneziawgnet.DeviceOptions{
-			HeaderProtectionKey:    inst.Obfuscation.HeaderProtectionKey,
-			ContentPaddingAddition: inst.Obfuscation.ContentPaddingAddition,
-			RekeyAfterTime:         inst.Obfuscation.RekeyAfterTime,
-			RekeyTimeout:           inst.Obfuscation.RekeyTimeout,
-			RejectAfterTime:        inst.Obfuscation.RejectAfterTime,
-			KeepaliveTimeout:       inst.Obfuscation.KeepaliveTimeout,
-			MaxHandshakeAttempts:   inst.Obfuscation.MaxHandshakeAttempts,
-			RandomTrailers:         inst.Obfuscation.RandomTrailers,
-			DisableCookies:         inst.Obfuscation.DisableCookies,
-		},
-	})
-}
-
-func (l *Local) updateTuicInbound(ctx context.Context, oldIb, newIb *model.Inbound) error {
-	if oldIb.Protocol == model.TUIC && newIb.Protocol != model.TUIC {
-		tuic.GetManager().Remove(oldIb.Id)
-		if !newIb.Enable {
-			return nil
-		}
-		return l.AddInbound(ctx, newIb)
-	}
-	if oldIb.Protocol != model.TUIC {
-		_ = l.DelInbound(ctx, oldIb)
-	}
-	if !newIb.Enable {
-		tuic.GetManager().Remove(newIb.Id)
-		return nil
-	}
-	inst, ok := tuic.InstanceFromInbound(newIb)
-	if !ok {
-		tuic.GetManager().Remove(newIb.Id)
-		return nil
-	}
-	return tuic.GetManager().Ensure(inst)
-}
-
 func (l *Local) AddUser(_ context.Context, ib *model.Inbound, userMap map[string]any) error {
-	if ib.Protocol == model.MTProto || ib.Protocol == model.AmneziaWG || ib.Protocol == model.TUIC {
+	if ib.Protocol == model.MTProto {
 		return nil
 	}
 	return l.withAPI(func(api *xray.XrayAPI) error {
-		return api.AddUser(string(ib.Protocol), ib.Tag, userMap)
+		return api.AddUser(string(ib.Protocol), ib.Tag, localRuntimeUserMap(ib, userMap))
 	})
 }
 
 func (l *Local) RemoveUser(_ context.Context, ib *model.Inbound, email string) error {
-	if ib.Protocol == model.MTProto || ib.Protocol == model.AmneziaWG || ib.Protocol == model.TUIC {
+	if ib.Protocol == model.MTProto {
 		return nil
 	}
 	return l.withAPI(func(api *xray.XrayAPI) error {
-		return api.RemoveUser(ib.Tag, email)
+		return api.RemoveUser(ib.Tag, model.RuntimeClientEmailForInbound(ib, email))
 	})
 }
 
@@ -280,7 +206,7 @@ func (l *Local) AddClient(ctx context.Context, ib *model.Inbound, client model.C
 		"publicKey":    client.PublicKey,
 		"allowedIPs":   client.AllowedIPs,
 		"preSharedKey": client.PreSharedKey,
-		"keepAlive":    wgKeepAlive(client.KeepAliveSeconds()),
+		"keepAlive":    wgKeepAlive(client.KeepAlive),
 	}
 	return l.AddUser(ctx, ib, user)
 }
@@ -321,7 +247,7 @@ func (l *Local) UpdateUser(ctx context.Context, ib *model.Inbound, oldEmail stri
 		"publicKey":    payload.PublicKey,
 		"allowedIPs":   payload.AllowedIPs,
 		"preSharedKey": payload.PreSharedKey,
-		"keepAlive":    wgKeepAlive(payload.KeepAliveSeconds()),
+		"keepAlive":    wgKeepAlive(payload.KeepAlive),
 	}
 	return l.AddUser(ctx, ib, user)
 }

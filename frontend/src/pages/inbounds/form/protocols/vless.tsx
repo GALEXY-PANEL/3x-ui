@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button, Form, Input, InputNumber, Select, Space, Typography } from 'antd';
 import { Controller, useFormContext } from 'react-hook-form';
@@ -29,11 +29,9 @@ export default function VlessFields({
   const { control } = useFormContext();
   const [authKind, setAuthKind] = useState<VlessAuthKind>(vlessAuthKind ?? 'x25519');
 
-  const [syncedAuthKind, setSyncedAuthKind] = useState(vlessAuthKind);
-  if (vlessAuthKind !== syncedAuthKind) {
-    setSyncedAuthKind(vlessAuthKind);
+  useEffect(() => {
     setAuthKind(vlessAuthKind ?? 'x25519');
-  }
+  }, [vlessAuthKind]);
 
   const authOptions = (Object.entries(VLESS_AUTH_LABEL_KEYS) as [VlessAuthKind, string][]).map(
     ([value, labelKey]) => ({ value, label: t(labelKey) }),
@@ -58,9 +56,7 @@ export default function VlessFields({
           <Button type="primary" loading={saving} onClick={() => getNewVlessEnc(authKind)}>
             {t('pages.inbounds.vlessAuthGenerateButton')}
           </Button>
-          <Button danger onClick={clearVlessEnc}>
-            {t('clear')}
-          </Button>
+          <Button danger onClick={clearVlessEnc}>{t('clear')}</Button>
         </Space>
         <Typography.Text type="secondary" className="vless-auth-state">
           {t('pages.inbounds.vlessAuthSelected', { auth: selectedVlessAuth })}

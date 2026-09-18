@@ -63,18 +63,15 @@ func (a *ServerController) initRouter(g *gin.RouterGroup) {
 	g.GET("/getNewmlkem768", a.getNewmlkem768)
 	g.GET("/getNewVlessEnc", a.getNewVlessEnc)
 	g.GET("/clientIps", a.getClientIps)
-	g.GET("/fail2banStatus", a.getFail2banStatus)
 
 	g.POST("/stopXrayService", a.stopXrayService)
 	g.POST("/restartXrayService", a.restartXrayService)
-	g.POST("/installXray/:version", a.installXray)
 	g.POST("/updatePanel", a.updatePanel)
 	g.POST("/setUpdateChannel", a.setUpdateChannel)
 	g.POST("/updateGeofile", a.updateGeofile)
 	g.POST("/updateGeofile/:fileName", a.updateGeofile)
 	g.POST("/logs/:count", a.getLogs)
 	g.POST("/xraylogs/:count", a.getXrayLogs)
-	g.POST("/amneziawglogs/:count", a.getAmneziaWGLogs)
 	g.POST("/importDB", a.importDB)
 	g.POST("/getNewEchCert", a.getNewEchCert)
 	g.POST("/getCertHash", a.getCertHash)
@@ -82,6 +79,17 @@ func (a *ServerController) initRouter(g *gin.RouterGroup) {
 	g.POST("/scanRealityTarget", a.scanRealityTarget)
 	g.POST("/scanRealityTargets", a.scanRealityTargets)
 	g.POST("/clientIps", a.setClientIps)
+	g.POST("/strictIPLimitParent", a.setStrictIPLimitParent)
+}
+
+func (a *ServerController) setStrictIPLimitParent(c *gin.Context) {
+	var req service.StrictIPLimitParentConfig
+	if err := c.ShouldBindJSON(&req); err != nil {
+		jsonMsg(c, "invalid strict ip-limit parent configuration", err)
+		return
+	}
+	err := (&service.StrictIPLimitService{}).SetParentConfig(req)
+	jsonMsg(c, "strict ip-limit parent configured", err)
 }
 
 // startTask registers the @2s ticker that refreshes server status, samples
@@ -106,11 +114,7 @@ func (a *ServerController) startTask() {
 }
 
 // status returns the current server status information.
-func (a *ServerController) status(c *gin.Context) { jsonObj(c, a.serverService.CurrentStatus(), nil) }
-
-func (a *ServerController) getFail2banStatus(c *gin.Context) {
-	jsonObj(c, a.serverService.GetFail2banStatus(), nil)
-}
+func (a *ServerController) status(c *gin.Context) { jsonObj(c, a.serverService.LastStatus(), nil) }
 
 func parseHistoryBucket(c *gin.Context) (int, bool) {
 	bucket, err := strconv.Atoi(c.Param("bucket"))
@@ -202,11 +206,15 @@ func (a *ServerController) getPanelUpdateInfo(c *gin.Context) {
 	jsonObj(c, info, nil)
 }
 
-// installXray installs or updates Xray to the specified version.
+// installXray is intentionally disabled in Heimdall.
+// Heimdall ships a pinned, verified core build; this endpoint must not install
+// vanilla Xray releases from XTLS/Xray-core.
 func (a *ServerController) installXray(c *gin.Context) {
-	version := c.Param("version")
-	err := a.serverService.UpdateXray(version)
-	jsonMsg(c, I18nWeb(c, "pages.index.xraySwitchVersionPopover"), err)
+	jsonMsg(
+		c,
+		I18nWeb(c, "pages.index.xraySwitchVersionPopover"),
+		fmt.Errorf("Xray core updates are disabled in Heimdall; use the pinned Heimdall core release workflow"),
+	)
 }
 
 // updatePanel starts a panel self-update. With no "dev" form value it follows
@@ -321,13 +329,6 @@ func (a *ServerController) getXrayLogs(c *gin.Context) {
 	jsonObj(c, logs, nil)
 }
 
-// getAmneziaWGLogs retrieves the live AmneziaWG peer activity and the panel's
-// own AmneziaWG event lines, optionally narrowed by a free-text filter.
-func (a *ServerController) getAmneziaWGLogs(c *gin.Context) {
-	logs := a.serverService.GetAmneziaWGLogs(c.Param("count"), c.PostForm("filter"))
-	jsonObj(c, logs, nil)
-}
-
 // getConfigJson retrieves the Xray configuration as JSON.
 func (a *ServerController) getConfigJson(c *gin.Context) {
 	configJson, err := a.serverService.GetConfigJson()
@@ -383,17 +384,10 @@ func (a *ServerController) importDB(c *gin.Context) {
 		return
 	}
 	defer file.Close()
-	// Absent field keeps this machine's own listen addresses, certificates and
-	// node identity: the safe default for the common case of moving a config to
-	// a new host. Send keepHostSettings=false to clone a machine wholesale.
-	keepHostSettings := c.Request.FormValue("keepHostSettings") != "false"
-	if err := a.serverService.ImportDB(file, keepHostSettings); err != nil {
+	if err := a.serverService.ImportDB(file); err != nil {
 		jsonMsg(c, I18nWeb(c, "pages.index.importDatabaseError"), err)
 		return
 	}
-	// Startup-registered routes (subPath) must match the restored DB, and the
-	// browser's restartPanel follow-up can 401 once the imported users land (#6446).
-	_ = a.panelService.RestartPanel(3 * time.Second)
 	jsonObj(c, I18nWeb(c, "pages.index.importDatabaseSuccess"), nil)
 }
 
@@ -475,12 +469,10 @@ func (a *ServerController) getRemoteCertHash(c *gin.Context) {
 	jsonObj(c, hashes, nil)
 }
 
-// scanRealityTarget probes the candidate REALITY target with the given sni and
-// returns a feasibility verdict; allowPrivate is the panel's confirmed opt-in.
+// scanRealityTarget runs a live TLS 1.3 probe against the candidate REALITY
+// target and returns a structured feasibility verdict plus the cert SAN names.
 func (a *ServerController) scanRealityTarget(c *gin.Context) {
-	xver, _ := strconv.Atoi(c.PostForm("xver"))
-	allowPrivate := c.PostForm("allowPrivate") == "true"
-	res, err := a.serverService.ScanRealityTarget(c.PostForm("target"), c.PostForm("sni"), xver, allowPrivate)
+	res, err := a.serverService.ScanRealityTarget(c.PostForm("target"))
 	if err != nil {
 		jsonMsg(c, I18nWeb(c, "pages.inbounds.toasts.scanRealityTargetError"), err)
 		return
@@ -488,8 +480,9 @@ func (a *ServerController) scanRealityTarget(c *gin.Context) {
 	jsonObj(c, res, nil)
 }
 
-// scanRealityTargets probes the supplied comma-separated targets, or the
-// realityScanCandidates setting when empty, ranked by feasibility then latency.
+// scanRealityTargets probes a batch of candidate REALITY targets (the supplied
+// comma-separated list, or the built-in seed set when empty) and returns each
+// verdict ranked by feasibility then latency.
 func (a *ServerController) scanRealityTargets(c *gin.Context) {
 	res, err := a.serverService.ScanRealityTargets(c.PostForm("targets"))
 	if err != nil {

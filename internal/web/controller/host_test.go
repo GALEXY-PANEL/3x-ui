@@ -63,6 +63,10 @@ func doHostReq(t *testing.T, engine *gin.Engine, method, path string, body any) 
 func TestHostController_AddListGetDelete(t *testing.T) {
 	newHostTestDB(t)
 	engine := gin.New()
+	engine.Use(func(c *gin.Context) {
+		c.Set("api_authed", true)
+		c.Next()
+	})
 	NewHostController(engine.Group("/panel/api/hosts"))
 
 	ib := &model.Inbound{Tag: "ctl", Enable: true, Port: 5443, Protocol: model.VLESS, Settings: `{"clients":[]}`}

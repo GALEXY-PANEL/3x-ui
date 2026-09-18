@@ -37,7 +37,7 @@ exports[`InboundSettingsSchema fixtures > parses hysteria-basic byte-stably 1`] 
         "totalGB": 0,
       },
     ],
-    "version": 2,
+    "version": 1,
   },
 }
 `;
@@ -248,7 +248,6 @@ exports[`InboundSettingsSchema fixtures > parses wireguard-basic byte-stably 1`]
       },
     ],
     "secretKey": "QGVlb2dXc1ZTWGw0ZXBzZndsWmtMaUM5MUlNYjBHWFdYbz0=",
-    "subnetIp": "",
   },
 }
 `;

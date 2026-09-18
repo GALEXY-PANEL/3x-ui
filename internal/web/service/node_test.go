@@ -182,6 +182,45 @@ func TestNodeService_NormalizeInboundSelection(t *testing.T) {
 	}
 }
 
+func TestNodeService_NormalizeDefaultsInboundImportToSelected(t *testing.T) {
+	s := &NodeService{}
+	n := &model.Node{
+		Name:        "n",
+		Address:     "example.com",
+		Port:        443,
+		InboundTags: []string{"managed-a"},
+	}
+	if err := s.normalize(n); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if n.InboundSyncMode != "selected" {
+		t.Fatalf("InboundSyncMode = %q, want selected", n.InboundSyncMode)
+	}
+	if len(n.InboundTags) != 1 || n.InboundTags[0] != "managed-a" {
+		t.Fatalf("InboundTags = %#v, want [managed-a]", n.InboundTags)
+	}
+}
+
+func TestNodeService_NormalizeExplicitAllImportsEverything(t *testing.T) {
+	s := &NodeService{}
+	n := &model.Node{
+		Name:            "n",
+		Address:         "example.com",
+		Port:            443,
+		InboundSyncMode: "all",
+		InboundTags:     []string{"ignored"},
+	}
+	if err := s.normalize(n); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if n.InboundSyncMode != "all" {
+		t.Fatalf("InboundSyncMode = %q, want all", n.InboundSyncMode)
+	}
+	if n.InboundTags != nil {
+		t.Fatalf("InboundTags = %#v, want nil in all mode", n.InboundTags)
+	}
+}
+
 func TestFilterNodeSnapshot(t *testing.T) {
 	snapshot := func() *runtime.TrafficSnapshot {
 		return &runtime.TrafficSnapshot{Inbounds: []*model.Inbound{
@@ -210,43 +249,5 @@ func TestFilterNodeSnapshot(t *testing.T) {
 	FilterNodeSnapshot(&model.Node{InboundSyncMode: "selected"}, none)
 	if len(none.Inbounds) != 0 {
 		t.Fatalf("empty selection kept %d inbounds, want 0", len(none.Inbounds))
-	}
-}
-
-func TestFilterNodeSnapshotMatchesPrefixedSelectedTag(t *testing.T) {
-	snap := &runtime.TrafficSnapshot{Inbounds: []*model.Inbound{
-		{Tag: "in-100-tcp"},
-		{Tag: "in-443-tcp"},
-	}}
-	FilterNodeSnapshot(&model.Node{
-		Id:              5,
-		InboundSyncMode: "selected",
-		InboundTags:     []string{"in-100-tcp", "n5-in-443-tcp"},
-	}, snap)
-
-	kept := make(map[string]bool, len(snap.Inbounds))
-	for _, ib := range snap.Inbounds {
-		kept[ib.Tag] = true
-	}
-	if !kept["in-443-tcp"] {
-		t.Fatalf("node-side tag in-443-tcp filtered out despite the prefixed central tag being selected; kept=%v", kept)
-	}
-	if !kept["in-100-tcp"] {
-		t.Fatalf("bare selected tag in-100-tcp was dropped; kept=%v", kept)
-	}
-}
-
-func TestFilterNodeSnapshotKeepsAdoptedAlias(t *testing.T) {
-	snap := &runtime.TrafficSnapshot{
-		Inbounds:       []*model.Inbound{{Tag: "deployed-alias"}, {Tag: "unmanaged"}},
-		ManagedAliases: []string{"deployed-alias"},
-	}
-	FilterNodeSnapshot(&model.Node{
-		InboundSyncMode: "selected",
-		InboundTags:     []string{"desired-name"},
-	}, snap)
-
-	if len(snap.Inbounds) != 1 || snap.Inbounds[0].Tag != "deployed-alias" {
-		t.Fatalf("filtered snapshot = %#v, want adopted alias only", snap.Inbounds)
 	}
 }

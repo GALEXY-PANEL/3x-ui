@@ -1,6 +1,6 @@
-# Contributing to 3x-ui-docs
+# Contributing to Heimdall Documentation
 
-Thanks for helping improve the 3x-ui documentation and product site!
+Thanks for helping improve the Heimdall documentation!
 
 ## Prerequisites
 
@@ -20,12 +20,12 @@ pnpm dev        # http://localhost:3000
 | `pnpm build`     | Production build                                      |
 | `pnpm start`     | Serve the production build                            |
 | `pnpm typecheck` | Generate MDX/route types and run `tsc --noEmit`       |
-| `pnpm lint`      | oxlint (`.oxlintrc.json`)                             |
-| `pnpm format`    | Format with oxfmt (`.oxfmtrc.json`)                   |
+| `pnpm lint`      | ESLint (flat config)                                  |
+| `pnpm format`    | Format with Prettier                                  |
 | `pnpm test`      | Run unit tests (Vitest) for `lib/xray/*` pure logic   |
 | `pnpm gen:api`   | Generate the API reference from `public/openapi.json` |
 
-Before opening a pull request, please run `pnpm typecheck`, `pnpm lint`, `pnpm format:check`, and
+Before opening a pull request, please run `pnpm typecheck`, `pnpm lint`, and
 `pnpm test` — these are the same checks that CI runs on every PR.
 
 ## License

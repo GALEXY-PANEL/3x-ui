@@ -1,6 +1,6 @@
 ---
 title: Обновление и удаление
-description: Управляйте 3x-ui через меню и CLI x-ui — обновляйте (стабильная, dev- или старая версия), меняйте настройки и удаляйте панель без остатков.
+description: Управляйте Heimdall через меню и CLI x-ui — обновляйте стабильные или dev-сборки, меняйте настройки и удаляйте панель без остатков.
 icon: RefreshCw
 ---
 
@@ -14,7 +14,7 @@ x-ui
 
 ## Меню управления `x-ui`
 
-В меню (пункты `0`–`28`) сверху отображается статус панели/Xray, а далее:
+В меню (пункты `0`–`27`) сверху отображается статус панели/Xray, а далее:
 
 | #     | Пункт                                  | Что делает                                                |
 | ----- | -------------------------------------- | --------------------------------------------------------- |
@@ -22,8 +22,8 @@ x-ui
 | 2     | Update                                 | Обновление до последнего **стабильного** релиза           |
 | 3     | Update to Dev Channel (latest commit)  | Обновление до скользящей сборки `dev-latest`              |
 | 4     | Update Menu                            | Обновление только скрипта меню `x-ui`                     |
-| 5     | Legacy Version                         | Установка конкретной старой версии (запросит тег)         |
-| 6     | Uninstall                              | Удаление 3x-ui (см. ниже)                                 |
+| 5     | Legacy Version (Disabled)              | Установка старой upstream-версии отключена в Heimdall    |
+| 6     | Uninstall                              | Удаление Heimdall (см. ниже)                                 |
 | 7     | Reset Username & Password              | Задать новые учётные данные; при желании отключить 2FA    |
 | 8     | Reset Web Base Path                    | Сгенерировать случайный базовый веб-путь                  |
 | 9     | Reset Settings                         | Сброс настроек панели (ваша учётная запись сохраняется)   |
@@ -36,13 +36,12 @@ x-ui
 | 18–19 | Enable / Disable Autostart             | Включить/выключить автозапуск при загрузке               |
 | 20    | SSL Certificate Management             | Let's Encrypt (домен или IP), пользовательские пути, продление/отзыв |
 | 21    | Cloudflare SSL Certificate             | Wildcard-сертификат через DNS-01 с помощью Cloudflare     |
-| 22    | IP Limit Management                    | Ограничения по IP на клиента на базе Fail2ban             |
-| 23    | Firewall Management                    | Установка `ufw` и правила для портов                      |
-| 24    | SSH Port Forwarding Management         | Привязать панель к localhost и туннелировать через SSH    |
-| 25    | PostgreSQL Management                  | Установка/миграция/управление PostgreSQL                  |
-| 26    | Enable BBR                             | Переключить sysctl-управление перегрузкой BBR             |
-| 27    | Update Geo Files                       | Обновить данные geoip/geosite (Loyalsoldier, IR, RU)      |
-| 28    | Speedtest by Ookla                     | Запустить тест скорости Ookla                             |
+| 22    | Firewall Management                    | Установка `ufw` и правила для портов                      |
+| 23    | SSH Port Forwarding Management         | Привязать панель к localhost и туннелировать через SSH    |
+| 24    | PostgreSQL Management                  | Установка/миграция/управление PostgreSQL                  |
+| 25    | Enable BBR                             | Переключить sysctl-управление перегрузкой BBR             |
+| 26    | Update Geo Files                       | Обновить данные geoip/geosite (Loyalsoldier, IR, RU)      |
+| 27    | Speedtest by Ookla                     | Запустить тест скорости Ookla                             |
 | 0     | Exit                                   | —                                                         |
 
 Некоторым из этих пунктов посвящены отдельные страницы: [SSL-сертификаты](/docs/config/ssl-certificates)
@@ -62,12 +61,12 @@ x-ui
 | `x-ui settings`            | Показать текущие настройки                          |
 | `x-ui enable` / `disable`  | Включить/выключить автозапуск при загрузке         |
 | `x-ui log`                 | Вывести отладочный лог в реальном времени           |
-| `x-ui banlog`              | Показать лог блокировок Fail2ban                    |
 | `x-ui update`              | Обновить до последнего стабильного релиза           |
 | `x-ui update-dev`          | Обновить до скользящей сборки `dev-latest`          |
-| `x-ui legacy`              | Установить конкретную старую версию (с запросом)    |
+| `x-ui legacy`              | Возвращает ошибку; установка старой upstream-версии отключена |
 | `x-ui update-all-geofiles` | Обновить все geo-файлы, перезапустить при изменениях |
 | `x-ui migrate-db --dsn …`  | Миграция SQLite → PostgreSQL (см. [База данных](/docs/reference/database)) |
+| `x-ui pgclient [ver]`      | Установить или обновить клиентские инструменты PostgreSQL |
 | `x-ui install` / `uninstall` | Установка / удаление                              |
 
 ## Обновление
@@ -76,7 +75,7 @@ x-ui
   установочного скрипта также обновляет панель на месте.
 - **Dev-канал:** пункт меню **3** или `x-ui update-dev` — скользящая сборка
   `dev-latest` по каждому коммиту (не стабильный релиз).
-- **Конкретная старая версия:** пункт меню **5** (Legacy Version).
+- **Старые upstream-версии:** отключены в Heimdall; используйте стабильный или dev-канал.
 
 Обновление сохраняет вашу базу данных и настройки. Перед переходом на новую
 мажорную версию сделайте [резервную копию](/docs/operations/backup-restore).

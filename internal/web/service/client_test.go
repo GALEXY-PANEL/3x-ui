@@ -4,14 +4,15 @@ import (
 	"encoding/json"
 	"testing"
 
+	"github.com/GALEXY-PANEL/3x-ui/v3/internal/database/model"
 	"github.com/GALEXY-PANEL/3x-ui/v3/internal/xray"
 )
 
 func TestClientWithAttachmentsMarshalJSONIncludesExtras(t *testing.T) {
 	c := ClientWithAttachments{
-		Id: 1, Email: "alice@example.com",
-		InboundIds: []int{3, 5},
-		Traffic:    &xray.ClientTraffic{Email: "alice@example.com", Up: 1024, Down: 4096, Enable: true},
+		ClientRecord: model.ClientRecord{Id: 1, Email: "alice@example.com"},
+		InboundIds:   []int{3, 5},
+		Traffic:      &xray.ClientTraffic{Email: "alice@example.com", Up: 1024, Down: 4096, Enable: true},
 	}
 	out, err := json.Marshal(c)
 	if err != nil {
@@ -38,8 +39,8 @@ func TestClientWithAttachmentsMarshalJSONIncludesExtras(t *testing.T) {
 
 func TestClientWithAttachmentsMarshalJSONOmitsAbsentTraffic(t *testing.T) {
 	c := ClientWithAttachments{
-		Id: 1, Email: "bob@example.com",
-		InboundIds: nil,
+		ClientRecord: model.ClientRecord{Id: 1, Email: "bob@example.com"},
+		InboundIds:   nil,
 	}
 	out, err := json.Marshal(c)
 	if err != nil {

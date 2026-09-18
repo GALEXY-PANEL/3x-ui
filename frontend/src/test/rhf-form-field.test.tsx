@@ -43,9 +43,7 @@ function Harness({ onSubmit }: { onSubmit: (values: Values) => void }) {
         >
           <InputNumber aria-label="bytes" />
         </FormField>
-        <button type="button" onClick={methods.handleSubmit(onSubmit)}>
-          Save
-        </button>
+        <button type="button" onClick={methods.handleSubmit(onSubmit)}>Save</button>
       </Form>
     </FormProvider>
   );

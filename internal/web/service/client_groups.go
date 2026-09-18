@@ -25,12 +25,12 @@ func (s *ClientService) ListGroups() ([]GroupSummary, error) {
 	// email is unique in both clients and client_traffics, so the LEFT JOIN
 	// never double-counts a client's traffic.
 	var derived []GroupSummary
-	if err := db.Table("clients AS c").
+	query := db.Table("clients AS c").
 		Select("c.group_name AS name, COUNT(*) AS client_count, COALESCE(SUM(ct.up + ct.down), 0) AS traffic_used, COALESCE(SUM(ct.up), 0) AS up, COALESCE(SUM(ct.down), 0) AS down").
 		Joins("LEFT JOIN client_traffics ct ON ct.email = c.email").
-		Where("c.group_name <> ''").
-		Group("c.group_name").
-		Scan(&derived).Error; err != nil {
+		Where("c.group_name <> ''")
+	query = applyVisibleClientEmailScope(query, "c.email")
+	if err := query.Group("c.group_name").Scan(&derived).Error; err != nil {
 		return nil, err
 	}
 	var stored []model.ClientGroup
@@ -123,10 +123,9 @@ func (s *ClientService) EmailsByGroup(name string) ([]string, error) {
 	}
 	db := database.GetDB()
 	var emails []string
-	if err := db.Model(&model.ClientRecord{}).
-		Where("group_name = ?", name).
-		Order("email ASC").
-		Pluck("email", &emails).Error; err != nil {
+	query := db.Model(&model.ClientRecord{}).Where("group_name = ?", name)
+	query = applyVisibleClientEmailScope(query, "email")
+	if err := query.Order("email ASC").Pluck("email", &emails).Error; err != nil {
 		return nil, err
 	}
 	if emails == nil {
@@ -208,6 +207,7 @@ func (s *ClientService) RemoveFromGroup(emails []string) (int, error) {
 
 func (s *ClientService) AddToGroup(emails []string, group string) (int, error) {
 	group = strings.TrimSpace(group)
+	emails = FilterVisibleClientEmails(emails)
 	if len(emails) == 0 {
 		return 0, nil
 	}
@@ -234,9 +234,7 @@ func (s *ClientService) AddToGroup(emails []string, group string) (int, error) {
 	var records []model.ClientRecord
 	for _, batch := range chunkStrings(emails, sqlInChunk) {
 		var rows []model.ClientRecord
-		if err := db.Where("email IN ?", batch).
-			Where("group_name IS NULL OR group_name <> ?", group).
-			Find(&rows).Error; err != nil {
+		if err := db.Where("email IN ?", batch).Find(&rows).Error; err != nil {
 			return 0, err
 		}
 		records = append(records, rows...)
@@ -250,17 +248,13 @@ func (s *ClientService) AddToGroup(emails []string, group string) (int, error) {
 	}
 
 	tx := db.Begin()
-	var affected int64
 	for _, batch := range chunkStrings(affectedEmails, sqlInChunk) {
-		result := tx.Model(&model.ClientRecord{}).
+		if err := tx.Model(&model.ClientRecord{}).
 			Where("email IN ?", batch).
-			Where("group_name IS NULL OR group_name <> ?", group).
-			UpdateColumn("group_name", group)
-		if result.Error != nil {
+			UpdateColumn("group_name", group).Error; err != nil {
 			tx.Rollback()
-			return 0, result.Error
+			return 0, err
 		}
-		affected += result.RowsAffected
 	}
 
 	var inboundIDs []int
@@ -337,7 +331,7 @@ func (s *ClientService) AddToGroup(emails []string, group string) (int, error) {
 	if err := tx.Commit().Error; err != nil {
 		return 0, err
 	}
-	return int(affected), nil
+	return len(records), nil
 }
 
 func (s *ClientService) replaceGroupValue(oldName, newName string) (int, error) {

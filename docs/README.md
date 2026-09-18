@@ -1,49 +1,31 @@
-<p align="center">
-  <a href="https://docs.sanaei.dev">
-    <picture>
-      <source media="(prefers-color-scheme: dark)" srcset="public/logo-dark.png" />
-      <img src="public/logo-light.png" alt="3x-ui" width="180" />
-    </picture>
-  </a>
-</p>
-
-<h1 align="center">3x-ui Documentation</h1>
+<h1 align="center">Heimdall Documentation</h1>
 
 <p align="center">
-  The official documentation and product site for
-  <a href="https://github.com/GALEXY-PANEL/3x-ui"><b>3x-ui</b></a> —
-  an advanced web panel for managing Xray-core servers.
+  Documentation and browser-side tools for
+  <a href="https://github.com/GALEXY-PANEL/3x-ui"><b>Heimdall</b></a>,
+  an advanced Xray-core management panel based on 3x-ui.
 </p>
 
 <p align="center">
-  <a href="https://docs.sanaei.dev"><img src="https://img.shields.io/badge/docs-docs.sanaei.dev-22d3ee?style=flat-square" alt="Live site" /></a>
-  <a href="https://github.com/GALEXY-PANEL/3x-ui/actions/workflows/docs-ci.yml"><img src="https://github.com/GALEXY-PANEL/3x-ui/actions/workflows/docs-ci.yml/badge.svg" alt="CI" /></a>
+  <a href="https://github.com/GALEXY-PANEL/3x-ui/actions/workflows/docs-ci.yml"><img src="https://github.com/GALEXY-PANEL/3x-ui/actions/workflows/docs-ci.yml/badge.svg" alt="Docs CI" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0-blue?style=flat-square" alt="License: GPL-3.0" /></a>
   <img src="https://img.shields.io/badge/Next.js-16-black?style=flat-square&logo=next.js" alt="Next.js 16" />
   <img src="https://img.shields.io/badge/Fumadocs-16-0ea5e9?style=flat-square" alt="Fumadocs 16" />
 </p>
 
-<p align="center">
-  <a href="https://docs.sanaei.dev"><b>Read the docs →</b></a>
-</p>
-
----
-
 ## Overview
 
-This directory (`docs/` in the [3x-ui](https://github.com/GALEXY-PANEL/3x-ui) monorepo) contains
-the source for [docs.sanaei.dev](https://docs.sanaei.dev) — a static-first documentation and
-marketing site built with [Fumadocs](https://fumadocs.dev) on Next.js. It has **no backend,
-no database, and no auth**: every page is prerendered and every tool runs entirely in the
-browser.
+The `docs/` directory contains Heimdall's documentation source, reference material,
+and browser-side configuration tools. It is maintained alongside the panel source
+so documentation can evolve with the project.
 
 ## What's inside
 
-The documentation walks you through 3x-ui from first install to day-to-day operation:
+The documentation walks you through Heimdall from first install to day-to-day operation:
 
 - **Getting Started** — installation, first login, and updating or uninstalling the panel.
 - **Configuration** — the panel, inbounds, REALITY, transports, clients, subscriptions, and share links.
-- **Operations** — reverse proxy, multi-node setups, outbounds & routing, backup/restore, Telegram and Discord bots, and security.
+- **Operations** — reverse proxy, multi-node setups, outbounds & routing, backup/restore, the Telegram bot, and security.
 - **Reference** — environment variables, the database, ports & firewall, and the HTTP API.
 - **Help** — troubleshooting, FAQ, migration, and how to contribute.
 
@@ -63,15 +45,15 @@ ever leaves your browser**:
 
 ## Tech stack
 
-| Layer     | Technology                                                  |
-| --------- | ----------------------------------------------------------- |
-| Framework | [Next.js 16](https://nextjs.org) (App Router) · React 19    |
-| Docs      | [Fumadocs](https://fumadocs.dev) (`-ui` / `-core` / `-mdx`) |
-| Styling   | [Tailwind CSS v4](https://tailwindcss.com)                  |
-| Search    | [Orama](https://orama.com) static index                     |
-| Language  | TypeScript (strict)                                         |
-| Tests     | [Vitest](https://vitest.dev) for the pure `lib/xray` logic  |
-| Tooling   | pnpm · oxlint · oxfmt                                       |
+| Layer      | Technology                                                  |
+| ---------- | ---------------------------------------------------------- |
+| Framework  | [Next.js 16](https://nextjs.org) (App Router) · React 19   |
+| Docs       | [Fumadocs](https://fumadocs.dev) (`-ui` / `-core` / `-mdx`) |
+| Styling    | [Tailwind CSS v4](https://tailwindcss.com)                 |
+| Search     | [Orama](https://orama.com) static index                    |
+| Language   | TypeScript (strict)                                         |
+| Tests      | [Vitest](https://vitest.dev) for the pure `lib/xray` logic  |
+| Tooling    | pnpm · ESLint 9 · Prettier                                  |
 
 ## Quick start
 
@@ -86,13 +68,13 @@ pnpm dev        # http://localhost:3000
 
 Useful scripts:
 
-| Script           | Description                                 |
-| ---------------- | ------------------------------------------- |
-| `pnpm dev`       | Start the dev server                        |
-| `pnpm build`     | Production build (also typechecks)          |
-| `pnpm typecheck` | Generate MDX/route types and `tsc --noEmit` |
-| `pnpm lint`      | Run oxlint (`.oxlintrc.json`)               |
-| `pnpm test`      | Run unit tests (Vitest)                     |
+| Script           | Description                                  |
+| ---------------- | -------------------------------------------- |
+| `pnpm dev`       | Start the dev server                         |
+| `pnpm build`     | Production build (also typechecks)           |
+| `pnpm typecheck` | Generate MDX/route types and `tsc --noEmit`  |
+| `pnpm lint`      | Run ESLint                                    |
+| `pnpm test`      | Run unit tests (Vitest)                       |
 
 See [`CONTRIBUTING.md`](./CONTRIBUTING.md) for the full list and project conventions.
 

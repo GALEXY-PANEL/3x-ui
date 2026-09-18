@@ -1,17 +1,11 @@
 import { RandomUtil, Wireguard } from '@/utils';
-import { generateAwgObfuscation } from '@/lib/xray/amneziawg-obfuscation';
 
-import type { AmneziawgInboundSettings } from '@/schemas/protocols/inbound/amneziawg';
 import type { HttpInboundSettings } from '@/schemas/protocols/inbound/http';
 import type { HysteriaClient, HysteriaInboundSettings } from '@/schemas/protocols/inbound/hysteria';
 import type { MixedInboundSettings } from '@/schemas/protocols/inbound/mixed';
 import type { MtprotoClient, MtprotoInboundSettings } from '@/schemas/protocols/inbound/mtproto';
-import type {
-  ShadowsocksClient,
-  ShadowsocksInboundSettings,
-} from '@/schemas/protocols/inbound/shadowsocks';
+import type { ShadowsocksClient, ShadowsocksInboundSettings } from '@/schemas/protocols/inbound/shadowsocks';
 import type { TrojanClient, TrojanInboundSettings } from '@/schemas/protocols/inbound/trojan';
-import type { TuicClient, TuicInboundSettings } from '@/schemas/protocols/inbound/tuic';
 import type { TunInboundSettings } from '@/schemas/protocols/inbound/tun';
 import type { TunnelInboundSettings } from '@/schemas/protocols/inbound/tunnel';
 import type { VlessClient, VlessInboundSettings } from '@/schemas/protocols/inbound/vless';
@@ -113,13 +107,9 @@ export interface ShadowsocksClientSeed extends ClientBaseSeed {
 // (the parent inbound's method is authoritative); only 2022-blake3 multi-
 // user inbounds use the per-client method. Callers pass `ssMethod` to seed
 // a method-specific password length when creating a multi-user client.
-export function createDefaultShadowsocksClient(
-  seed: ShadowsocksClientSeed = {},
-): ShadowsocksClient {
+export function createDefaultShadowsocksClient(seed: ShadowsocksClientSeed = {}): ShadowsocksClient {
   const method = seed.method ?? '';
-  const password =
-    seed.password ??
-    RandomUtil.randomShadowsocksPassword(seed.ssMethod ?? '2022-blake3-aes-256-gcm');
+  const password = seed.password ?? RandomUtil.randomShadowsocksPassword(seed.ssMethod ?? '2022-blake3-aes-256-gcm');
   return {
     method,
     password,
@@ -134,22 +124,6 @@ export interface HysteriaClientSeed extends ClientBaseSeed {
 export function createDefaultHysteriaClient(seed: HysteriaClientSeed = {}): HysteriaClient {
   return {
     auth: seed.auth ?? RandomUtil.randomSeq(10),
-    ...clientBase(seed),
-  };
-}
-
-export interface TuicClientSeed extends ClientBaseSeed {
-  uuid?: string;
-  id?: string;
-  password?: string;
-}
-
-export function createDefaultTuicClient(seed: TuicClientSeed = {}): TuicClient {
-  const uuid = seed.uuid ?? seed.id ?? RandomUtil.randomUUID();
-  return {
-    uuid,
-    id: uuid,
-    password: seed.password ?? RandomUtil.randomSeq(10),
     ...clientBase(seed),
   };
 }
@@ -200,7 +174,7 @@ export function createDefaultShadowsocksInboundSettings(
 // constructor — the field discriminates v1 vs v2 inside the same settings
 // shape. Callers that explicitly want v1 pass `{ version: 1 }`.
 export interface HysteriaInboundSeed {
-  version?: 2;
+  version?: number;
 }
 
 export function createDefaultHysteriaInboundSettings(
@@ -282,20 +256,12 @@ export interface WireguardInboundSeed {
   mtu?: number;
   secretKey?: string;
   noKernelTun?: boolean;
-  subnetIp?: string;
-  subnetCidr?: number;
 }
 
 // WireGuard is multi-client now: a new inbound holds only the server identity
 // (secretKey/mtu) and starts with no clients. Clients (peers) are added later
 // through the client modal, which generates each one's keypair and a unique
 // tunnel address. peers stays empty for backward-compatible parsing.
-//
-// subnetIp/subnetCidr default to 10.0.0.0/24 here — the same value the Go
-// backend has always fallen back to for an inbound with no clients yet — so
-// a freshly created inbound shows an explicit, editable value from the
-// start (matching AmneziaWG's own subnet field), rather than an empty one
-// that silently relies on server-side inference until an admin fills it in.
 export function createDefaultWireguardInboundSettings(
   seed: WireguardInboundSeed = {},
 ): WireguardInboundSettings {
@@ -305,55 +271,6 @@ export function createDefaultWireguardInboundSettings(
     peers: [],
     clients: [],
     noKernelTun: seed.noKernelTun ?? false,
-    subnetIp: seed.subnetIp ?? '10.0.0.0',
-    subnetCidr: seed.subnetCidr ?? 24,
-  };
-}
-
-// AmneziaWG is multi-client, like WireGuard, and uses the same Curve25519
-// keypair format — Wireguard.generateKeypair() works unchanged. Unlike
-// WireGuard's Xray-native inbound, the server's publicKey is a real
-// persisted field here (the Go backend reads it directly rather than
-// re-deriving it), so it's seeded alongside privateKey. The obfuscation
-// parameters are randomized per inbound (a static default would give every
-// install the same DPI fingerprint), mirroring the Go backend's
-// internal/amneziawg.GenerateObfuscation31.
-export function createDefaultAmneziawgInboundSettings(): AmneziawgInboundSettings {
-  const kp = Wireguard.generateKeypair();
-  return {
-    server: {
-      privateKey: kp.privateKey,
-      publicKey: kp.publicKey,
-      subnetIp: '10.8.1.0',
-      subnetCidr: 24,
-      primaryDns: '8.8.8.8',
-      secondaryDns: '8.8.4.4',
-      externalInterface: '',
-      ipv6Enabled: false,
-      ipv6Subnet: '',
-      ipv6ExternalInterface: '',
-      ...generateAwgObfuscation(),
-    },
-    clients: [],
-  };
-}
-
-export function createDefaultTuicInboundSettings(): TuicInboundSettings {
-  return {
-    server: {
-      certificate: '',
-      private_key: '',
-      congestion_control: 'bbr',
-      alpn: ['h3', 'spdy/3.1'],
-      udp_relay_mode: 'native',
-      zero_rtt_handshake: true,
-      log_level: 'info',
-      max_idle_time: 15,
-      authentication_timeout: 3,
-      max_udp_relay_packet_size: 1500,
-      sni: '',
-    },
-    clients: [],
   };
 }
 
@@ -373,39 +290,21 @@ export type AnyInboundSettings =
   | TunInboundSettings
   | TunnelInboundSettings
   | WireguardInboundSettings
-  | MtprotoInboundSettings
-  | AmneziawgInboundSettings
-  | TuicInboundSettings;
+  | MtprotoInboundSettings;
 
 export function createDefaultInboundSettings(protocol: string): AnyInboundSettings | null {
   switch (protocol) {
-    case 'vless':
-      return createDefaultVlessInboundSettings();
-    case 'vmess':
-      return createDefaultVmessInboundSettings();
-    case 'trojan':
-      return createDefaultTrojanInboundSettings();
-    case 'shadowsocks':
-      return createDefaultShadowsocksInboundSettings();
-    case 'hysteria':
-      return createDefaultHysteriaInboundSettings();
-    case 'http':
-      return createDefaultHttpInboundSettings();
-    case 'mixed':
-      return createDefaultMixedInboundSettings();
-    case 'tunnel':
-      return createDefaultTunnelInboundSettings();
-    case 'tun':
-      return createDefaultTunInboundSettings();
-    case 'wireguard':
-      return createDefaultWireguardInboundSettings();
-    case 'mtproto':
-      return createDefaultMtprotoInboundSettings();
-    case 'amneziawg':
-      return createDefaultAmneziawgInboundSettings();
-    case 'tuic':
-      return createDefaultTuicInboundSettings();
-    default:
-      return null;
+    case 'vless':       return createDefaultVlessInboundSettings();
+    case 'vmess':       return createDefaultVmessInboundSettings();
+    case 'trojan':      return createDefaultTrojanInboundSettings();
+    case 'shadowsocks': return createDefaultShadowsocksInboundSettings();
+    case 'hysteria':    return createDefaultHysteriaInboundSettings();
+    case 'http':        return createDefaultHttpInboundSettings();
+    case 'mixed':       return createDefaultMixedInboundSettings();
+    case 'tunnel':      return createDefaultTunnelInboundSettings();
+    case 'tun':         return createDefaultTunInboundSettings();
+    case 'wireguard':   return createDefaultWireguardInboundSettings();
+    case 'mtproto':     return createDefaultMtprotoInboundSettings();
+    default:            return null;
   }
 }

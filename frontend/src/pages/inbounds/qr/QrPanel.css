@@ -28,7 +28,7 @@
 .qr-panel-canvas .qr-code {
   cursor: pointer;
   background: #fff;
-  border-radius: 8px;
+  border-radius: 4px;
   line-height: 0;
 }
 

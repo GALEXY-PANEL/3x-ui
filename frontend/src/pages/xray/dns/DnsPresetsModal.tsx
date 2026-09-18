@@ -86,17 +86,14 @@ export default function DnsPresetsModal({ open, onClose, onInstall }: DnsPresets
         type="warning"
         showIcon
         className="preset-warning"
-        title={t('pages.xray.dns.dnsLeakWarning')}
+        message={t('pages.xray.dns.dnsLeakWarning')}
       />
       <div className="preset-list">
         {PRESETS.map((preset) => (
           <div key={preset.name} className="preset-row">
             <Space size="small" align="center">
               {preset.tags.map((tag) => (
-                <Tag
-                  key={tag}
-                  color={tag === 'Family' ? 'purple' : tag === 'UDP' ? 'orange' : 'green'}
-                >
+                <Tag key={tag} color={tag === 'Family' ? 'purple' : tag === 'UDP' ? 'orange' : 'green'}>
                   {tagLabel(tag, t)}
                 </Tag>
               ))}

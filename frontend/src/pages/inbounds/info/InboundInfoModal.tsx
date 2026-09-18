@@ -10,14 +10,11 @@ import { InfinityIcon } from '@/components/ui';
 import { useDatepicker } from '@/hooks/useDatepicker';
 import {
   genAllLinks,
-  genAmneziaWGConfigs,
-  genAmneziaWGLinks,
   genWireguardConfigs,
   genWireguardLinks,
   preferPublicHost,
 } from '@/lib/xray/inbound-link';
 import { inboundFromDb } from '@/lib/xray/inbound-from-db';
-import { withMtprotoHostEndpoints } from '@/lib/hosts/host-link';
 
 import {
   buildInboundInfo,
@@ -30,8 +27,6 @@ import {
 import type { ClientSetting, ClientStats, InboundInfo, InboundInfoModalProps } from './types';
 import './InboundInfoModal.css';
 
-const EMPTY_HOSTS: NonNullable<InboundInfoModalProps['hosts']> = [];
-
 export default function InboundInfoModal({
   open,
   onClose,
@@ -43,7 +38,6 @@ export default function InboundInfoModal({
   tgBotEnable = false,
   nodeAddress = '',
   subSettings,
-  hosts = EMPTY_HOSTS,
   lastOnlineMap = {},
 }: InboundInfoModalProps) {
   const { t } = useTranslation();
@@ -55,8 +49,6 @@ export default function InboundInfoModal({
   const [links, setLinks] = useState<{ remark?: string; link: string }[]>([]);
   const [wireguardConfigs, setWireguardConfigs] = useState<string[]>([]);
   const [wireguardLinks, setWireguardLinks] = useState<string[]>([]);
-  const [amneziawgConfigs, setAmneziawgConfigs] = useState<string[]>([]);
-  const [amneziawgLinks, setAmneziawgLinks] = useState<string[]>([]);
   const [subLink, setSubLink] = useState('');
   const [subJsonLink, setSubJsonLink] = useState('');
   const [refreshing, setRefreshing] = useState(false);
@@ -107,51 +99,22 @@ export default function InboundInfoModal({
     }
   }, [clientStats, t]);
 
-  // The panel's contents are a pure function of the props, so they are adopted
-  // during render; only the IP lookup below stays asynchronous.
-  const [syncedProps, setSyncedProps] = useState<{
-    dbInbound: typeof dbInbound;
-    clientIndex: typeof clientIndex;
-    nodeAddress: typeof nodeAddress;
-    subSettings: typeof subSettings;
-    hosts: typeof hosts;
-    ipLimitEnable: typeof ipLimitEnable;
-  } | null>(null);
-  if (
-    open &&
-    dbInbound &&
-    (syncedProps === null ||
-      syncedProps.dbInbound !== dbInbound ||
-      syncedProps.clientIndex !== clientIndex ||
-      syncedProps.nodeAddress !== nodeAddress ||
-      syncedProps.subSettings !== subSettings ||
-      syncedProps.hosts !== hosts ||
-      syncedProps.ipLimitEnable !== ipLimitEnable)
-  ) {
-    setSyncedProps({ dbInbound, clientIndex, nodeAddress, subSettings, hosts, ipLimitEnable });
+  useEffect(() => {
+    if (!open || !dbInbound) return;
     const info = buildInboundInfo(dbInbound);
     setInbound(info);
     setActiveTab(info.clients.length > 0 ? 'client' : 'inbound');
 
     const idx = clientIndex ?? 0;
-    const clientSet = info.clients.length > 0 ? info.clients[idx] || null : null;
+    const clientSet = info.clients.length > 0 ? (info.clients[idx] || null) : null;
     setClientSettings(clientSet);
     const stats = clientSet
       ? (dbInbound.clientStats || []).find((s) => s.email === clientSet.email) || null
       : null;
     setClientStats(stats);
 
-    const fallbackHostname = preferPublicHost(
-      window.location.hostname,
-      subSettings?.publicHost ?? '',
-    );
-    const inboundForLinks = withMtprotoHostEndpoints(
-      inboundFromDb(dbInbound),
-      dbInbound.id,
-      hosts,
-      nodeAddress,
-      fallbackHostname,
-    );
+    const inboundForLinks = inboundFromDb(dbInbound);
+    const fallbackHostname = preferPublicHost(window.location.hostname, subSettings?.publicHost ?? '');
     if (info.protocol === Protocols.WIREGUARD) {
       setWireguardConfigs(
         genWireguardConfigs({
@@ -169,28 +132,6 @@ export default function InboundInfoModal({
           fallbackHostname,
         }).split('\r\n'),
       );
-      setAmneziawgConfigs([]);
-      setAmneziawgLinks([]);
-      setLinks([]);
-    } else if (info.protocol === Protocols.AMNEZIAWG) {
-      setAmneziawgConfigs(
-        genAmneziaWGConfigs({
-          inbound: inboundForLinks,
-          remark: dbInbound.remark,
-          hostOverride: nodeAddress,
-          fallbackHostname,
-        }).split('\r\n'),
-      );
-      setAmneziawgLinks(
-        genAmneziaWGLinks({
-          inbound: inboundForLinks,
-          remark: dbInbound.remark,
-          hostOverride: nodeAddress,
-          fallbackHostname,
-        }).split('\r\n'),
-      );
-      setWireguardConfigs([]);
-      setWireguardLinks([]);
       setLinks([]);
     } else {
       setLinks(
@@ -204,8 +145,6 @@ export default function InboundInfoModal({
       );
       setWireguardConfigs([]);
       setWireguardLinks([]);
-      setAmneziawgConfigs([]);
-      setAmneziawgLinks([]);
     }
 
     if (clientSet?.subId) {
@@ -247,16 +186,7 @@ export default function InboundInfoModal({
         }
       });
     }
-  }
-
-  // The expiry tag colours against the current time; a state-backed clock keeps
-  // render pure and still refreshes the tag while the modal stays open.
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    if (!open) return;
-    const id = window.setInterval(() => setNow(Date.now()), 60_000);
-    return () => window.clearInterval(id);
-  }, [open]);
+  }, [open, dbInbound, clientIndex, nodeAddress, subSettings, ipLimitEnable, t]);
 
   const isEnable = useMemo(() => {
     if (clientSettings) return !!clientSettings.enable;
@@ -269,9 +199,9 @@ export default function InboundInfoModal({
     const used = (clientStats.up ?? 0) + (clientStats.down ?? 0);
     if (total > 0 && used >= total) return true;
     const expiry = clientSettings.expiryTime ?? 0;
-    if (expiry > 0 && now >= expiry) return true;
+    if (expiry > 0 && Date.now() >= expiry) return true;
     return false;
-  }, [clientStats, clientSettings, now]);
+  }, [clientStats, clientSettings]);
 
   const remainingStats = useMemo(() => {
     if (!clientStats || !clientSettings) return '-';
@@ -279,12 +209,10 @@ export default function InboundInfoModal({
     return remained > 0 ? SizeFormatter.sizeFormat(remained) : '-';
   }, [clientStats, clientSettings]);
 
-  const isWireguard = !!dbInbound?.isWireguard;
-  const wgSecretKey = inbound?.settings?.secretKey as string | undefined;
-  const wgPubKey = useMemo(
-    () => (isWireguard && wgSecretKey ? Wireguard.generateKeypair(wgSecretKey).publicKey : ''),
-    [isWireguard, wgSecretKey],
-  );
+  const wgPubKey = useMemo(() => {
+    if (!dbInbound?.isWireguard || !inbound?.settings?.secretKey) return '';
+    return Wireguard.generateKeypair(inbound.settings.secretKey as string).publicKey;
+  }, [dbInbound?.isWireguard, inbound?.settings?.secretKey]);
 
   const formatLastOnline = useCallback(
     (email: string) => {
@@ -305,13 +233,7 @@ export default function InboundInfoModal({
 
   if (!dbInbound || !inbound) {
     return (
-      <Modal
-        open={open}
-        onCancel={onClose}
-        title={t('pages.inbounds.inboundInfo')}
-        footer={null}
-        width={640}
-      />
+      <Modal open={open} onCancel={onClose} title={t('pages.inbounds.inboundInfo')} footer={null} width={640} />
     );
   }
 
@@ -330,39 +252,23 @@ export default function InboundInfoModal({
             </td>
           </tr>
           {clientSettings?.id && (
-            <tr>
-              <td>ID</td>
-              <td>
-                <Tag>{clientSettings.id}</Tag>
-              </td>
-            </tr>
+            <tr><td>ID</td><td><Tag>{clientSettings.id}</Tag></td></tr>
           )}
           {dbInbound.isVMess && (
-            <tr>
-              <td>{t('security')}</td>
-              <td>
-                <Tag>{clientSettings?.security}</Tag>
-              </td>
-            </tr>
+            <tr><td>{t('security')}</td><td><Tag>{clientSettings?.security}</Tag></td></tr>
           )}
           {inbound.isVlessTlsFlow && (
             <tr>
               <td>{t('pages.clients.flow')}</td>
               <td>
-                {clientSettings?.flow ? (
-                  <Tag>{clientSettings.flow}</Tag>
-                ) : (
-                  <Tag color="orange">{t('none')}</Tag>
-                )}
+                {clientSettings?.flow ? <Tag>{clientSettings.flow}</Tag> : <Tag color="orange">{t('none')}</Tag>}
               </td>
             </tr>
           )}
           {clientSettings?.password && (
             <tr>
               <td>{t('password')}</td>
-              <td>
-                <Tag className="info-large-tag">{clientSettings.password}</Tag>
-              </td>
+              <td><Tag className="info-large-tag">{clientSettings.password}</Tag></td>
             </tr>
           )}
           <tr>
@@ -381,12 +287,10 @@ export default function InboundInfoModal({
             <tr>
               <td>{t('usage')}</td>
               <td>
-                <Tag color="green">
-                  {SizeFormatter.sizeFormat(clientStats.up + clientStats.down)}
-                </Tag>
+                <Tag color="green">{SizeFormatter.sizeFormat(clientStats.up + clientStats.down)}</Tag>
                 <Tag>
-                  ↑ {SizeFormatter.sizeFormat(clientStats.up)} /{' '}
-                  {SizeFormatter.sizeFormat(clientStats.down)} ↓
+                  ↑ {SizeFormatter.sizeFormat(clientStats.up)} /
+                  {' '}{SizeFormatter.sizeFormat(clientStats.down)} ↓
                 </Tag>
               </td>
             </tr>
@@ -396,9 +300,7 @@ export default function InboundInfoModal({
             <td>
               {clientSettings?.created_at ? (
                 <Tag>{IntlUtil.formatDate(clientSettings.created_at, datepicker)}</Tag>
-              ) : (
-                <Tag>-</Tag>
-              )}
+              ) : <Tag>-</Tag>}
             </td>
           </tr>
           <tr>
@@ -406,33 +308,17 @@ export default function InboundInfoModal({
             <td>
               {clientSettings?.updated_at ? (
                 <Tag>{IntlUtil.formatDate(clientSettings.updated_at, datepicker)}</Tag>
-              ) : (
-                <Tag>-</Tag>
-              )}
+              ) : <Tag>-</Tag>}
             </td>
           </tr>
           <tr>
             <td>{t('lastOnline')}</td>
-            <td>
-              <Tag>{formatLastOnline(clientSettings?.email || '')}</Tag>
-            </td>
+            <td><Tag>{formatLastOnline(clientSettings?.email || '')}</Tag></td>
           </tr>
           {clientSettings?.comment && (
-            <tr>
-              <td>{t('comment')}</td>
-              <td>
-                <Tag className="info-large-tag">{clientSettings.comment}</Tag>
-              </td>
-            </tr>
+            <tr><td>{t('comment')}</td><td><Tag className="info-large-tag">{clientSettings.comment}</Tag></td></tr>
           )}
-          {ipLimitEnable && (
-            <tr>
-              <td>{t('pages.inbounds.IPLimit')}</td>
-              <td>
-                <Tag>{clientSettings?.limitIp ?? 0}</Tag>
-              </td>
-            </tr>
-          )}
+          <tr><td>{t('pages.inbounds.IPLimit')}</td><td><Tag>{clientSettings?.limitIp ?? 0}</Tag></td></tr>
           {ipLimitEnable && (clientSettings?.limitIp ?? 0) > 0 && (
             <tr>
               <td>{t('pages.inbounds.IPLimitlog')}</td>
@@ -441,9 +327,7 @@ export default function InboundInfoModal({
                   {clientIpsArray.length > 0 ? (
                     <div>
                       {clientIpsArray.map((item, idx) => (
-                        <Tag color="blue" className="ip-log-row" key={idx}>
-                          {item}
-                        </Tag>
+                        <Tag color="blue" className="ip-log-row" key={idx}>{item}</Tag>
                       ))}
                     </div>
                   ) : (
@@ -451,22 +335,9 @@ export default function InboundInfoModal({
                   )}
                 </div>
                 <div className="ip-log-actions">
-                  <SyncOutlined
-                    spin={refreshing}
-                    role="button"
-                    tabIndex={0}
-                    aria-label={t('refresh')}
-                    onClick={() => loadClientIps()}
-                    onKeyDown={activateOnKey(() => loadClientIps())}
-                  />
+                  <SyncOutlined spin={refreshing} role="button" tabIndex={0} aria-label={t('refresh')} onClick={() => loadClientIps()} onKeyDown={activateOnKey(() => loadClientIps())} />
                   <Tooltip title={t('pages.inbounds.IPLimitlogclear')}>
-                    <DeleteOutlined
-                      role="button"
-                      tabIndex={0}
-                      aria-label={t('pages.inbounds.IPLimitlogclear')}
-                      onClick={() => clearClientIps()}
-                      onKeyDown={activateOnKey(() => clearClientIps())}
-                    />
+                    <DeleteOutlined role="button" tabIndex={0} aria-label={t('pages.inbounds.IPLimitlogclear')} onClick={() => clearClientIps()} onKeyDown={activateOnKey(() => clearClientIps())} />
                   </Tooltip>
                 </div>
               </td>
@@ -489,9 +360,7 @@ export default function InboundInfoModal({
               {clientStats && (clientSettings?.totalGB ?? 0) > 0 ? (
                 <Tag color={statsColor(clientStats, trafficDiff)}>{remainingStats}</Tag>
               ) : !clientSettings?.totalGB || clientSettings.totalGB <= 0 ? (
-                <Tag color="purple">
-                  <InfinityIcon />
-                </Tag>
+                <Tag color="purple"><InfinityIcon /></Tag>
               ) : null}
             </td>
             <td>
@@ -500,24 +369,18 @@ export default function InboundInfoModal({
                   {SizeFormatter.sizeFormat(clientSettings!.totalGB!)}
                 </Tag>
               ) : (
-                <Tag color="purple">
-                  <InfinityIcon />
-                </Tag>
+                <Tag color="purple"><InfinityIcon /></Tag>
               )}
             </td>
             <td>
               {(clientSettings?.expiryTime ?? 0) > 0 ? (
-                <Tag color={ColorUtils.usageColor(now, expireDiff, clientSettings!.expiryTime!)}>
+                <Tag color={ColorUtils.usageColor(Date.now(), expireDiff, clientSettings!.expiryTime!)}>
                   {IntlUtil.formatDate(clientSettings!.expiryTime!, datepicker)}
                 </Tag>
               ) : (clientSettings?.expiryTime ?? 0) < 0 ? (
-                <Tag color="green">
-                  {clientSettings!.expiryTime! / -86400000} {t('day')}
-                </Tag>
+                <Tag color="green">{clientSettings!.expiryTime! / -86400000} {t('day')}</Tag>
               ) : (
-                <Tag color="purple">
-                  <InfinityIcon />
-                </Tag>
+                <Tag color="purple"><InfinityIcon /></Tag>
               )}
             </td>
           </tr>
@@ -530,12 +393,7 @@ export default function InboundInfoModal({
           <div className="tg-row">
             <Tag color="blue">{clientSettings.tgId}</Tag>
             <Tooltip title={t('copy')}>
-              <Button
-                size="small"
-                icon={<CopyOutlined />}
-                aria-label={t('copy')}
-                onClick={() => copyText(clientSettings.tgId, t)}
-              />
+              <Button size="small" icon={<CopyOutlined />} aria-label={t('copy')} onClick={() => copyText(clientSettings.tgId, t)} />
             </Tooltip>
           </div>
         </>
@@ -549,12 +407,7 @@ export default function InboundInfoModal({
               <div className="link-panel-header">
                 <Tag color="green">{link.remark || `Link ${idx + 1}`}</Tag>
                 <Tooltip title={t('copy')}>
-                  <Button
-                    size="small"
-                    icon={<CopyOutlined />}
-                    aria-label={t('copy')}
-                    onClick={() => copyText(link.link, t)}
-                  />
+                  <Button size="small" icon={<CopyOutlined />} aria-label={t('copy')} onClick={() => copyText(link.link, t)} />
                 </Tooltip>
               </div>
               <code className="link-panel-text">{link.link}</code>
@@ -570,44 +423,20 @@ export default function InboundInfoModal({
             <div className="link-panel-header">
               <Tag color="green">{t('subscription.title')}</Tag>
               <Tooltip title={t('copy')}>
-                <Button
-                  size="small"
-                  icon={<CopyOutlined />}
-                  aria-label={t('copy')}
-                  onClick={() => copyText(subLink, t)}
-                />
+                <Button size="small" icon={<CopyOutlined />} aria-label={t('copy')} onClick={() => copyText(subLink, t)} />
               </Tooltip>
             </div>
-            <a
-              href={subLink}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="link-panel-anchor"
-            >
-              {subLink}
-            </a>
+            <a href={subLink} target="_blank" rel="noopener noreferrer" className="link-panel-anchor">{subLink}</a>
           </div>
           {subSettings?.subJsonEnable && subJsonLink && (
             <div className="link-panel">
               <div className="link-panel-header">
                 <Tag color="green">JSON</Tag>
                 <Tooltip title={t('copy')}>
-                  <Button
-                    size="small"
-                    icon={<CopyOutlined />}
-                    aria-label={t('copy')}
-                    onClick={() => copyText(subJsonLink, t)}
-                  />
+                  <Button size="small" icon={<CopyOutlined />} aria-label={t('copy')} onClick={() => copyText(subJsonLink, t)} />
                 </Tooltip>
               </div>
-              <a
-                href={subJsonLink}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="link-panel-anchor"
-              >
-                {subJsonLink}
-              </a>
+              <a href={subJsonLink} target="_blank" rel="noopener noreferrer" className="link-panel-anchor">{subJsonLink}</a>
             </div>
           )}
         </>
@@ -620,76 +449,50 @@ export default function InboundInfoModal({
       <dl className="info-list">
         <div className="info-row">
           <dt>{t('pages.inbounds.protocol')}</dt>
-          <dd>
-            <Tag color="purple">{dbInbound.protocol}</Tag>
-          </dd>
+          <dd><Tag color="purple">{dbInbound.protocol}</Tag></dd>
         </div>
         <div className="info-row">
           <dt>{t('pages.inbounds.address')}</dt>
-          <dd>
-            <Tag className="value-tag">{dbInbound.address}</Tag>
-          </dd>
+          <dd><Tag className="value-tag">{dbInbound.address}</Tag></dd>
         </div>
         <div className="info-row">
           <dt>{t('pages.inbounds.port')}</dt>
-          <dd>
-            <Tag>{dbInbound.port}</Tag>
-          </dd>
+          <dd><Tag>{dbInbound.port}</Tag></dd>
         </div>
 
         {(dbInbound.isVMess || dbInbound.isVLess || dbInbound.isTrojan || dbInbound.isSS) && (
           <>
             <div className="info-row">
               <dt>{t('transmission')}</dt>
-              <dd>
-                <Tag color="green">{networkLabel}</Tag>
-              </dd>
+              <dd><Tag color="green">{networkLabel}</Tag></dd>
             </div>
             {(inbound.isTcp || inbound.isWs || inbound.isHttpupgrade || inbound.isXHTTP) && (
               <>
                 <div className="info-row">
                   <dt>{t('host')}</dt>
-                  <dd>
-                    {inbound.host ? (
-                      <Tag className="value-tag">{inbound.host}</Tag>
-                    ) : (
-                      <Tag color="orange">{t('none')}</Tag>
-                    )}
-                  </dd>
+                  <dd>{inbound.host ? <Tag className="value-tag">{inbound.host}</Tag> : <Tag color="orange">{t('none')}</Tag>}</dd>
                 </div>
                 <div className="info-row">
                   <dt>{t('path')}</dt>
-                  <dd>
-                    {inbound.path ? (
-                      <Tag className="value-tag">{inbound.path}</Tag>
-                    ) : (
-                      <Tag color="orange">{t('none')}</Tag>
-                    )}
-                  </dd>
+                  <dd>{inbound.path ? <Tag className="value-tag">{inbound.path}</Tag> : <Tag color="orange">{t('none')}</Tag>}</dd>
                 </div>
               </>
             )}
             {inbound.isXHTTP && (
               <div className="info-row">
                 <dt>{t('pages.inbounds.info.mode')}</dt>
-                <dd>
-                  <Tag>{inbound.stream?.xhttp?.mode}</Tag>
-                </dd>
+                <dd><Tag>{inbound.stream?.xhttp?.mode}</Tag></dd>
               </div>
             )}
             {inbound.isGrpc && (
               <>
                 <div className="info-row">
                   <dt>{t('pages.inbounds.info.grpcServiceName')}</dt>
-                  <dd>
-                    <Tag className="value-tag">{inbound.serviceName}</Tag>
-                  </dd>
+                  <dd><Tag className="value-tag">{inbound.serviceName}</Tag></dd>
                 </div>
                 <div className="info-row">
                   <dt>{t('pages.inbounds.info.grpcMultiMode')}</dt>
-                  <dd>
-                    <Tag>{String(inbound.stream?.grpc?.multiMode)}</Tag>
-                  </dd>
+                  <dd><Tag>{String(inbound.stream?.grpc?.multiMode)}</Tag></dd>
                 </div>
               </>
             )}
@@ -700,9 +503,7 @@ export default function InboundInfoModal({
           <>
             <div className="info-row">
               <dt>{t('security')}</dt>
-              <dd>
-                <Tag color={securityColor}>{securityLabel}</Tag>
-              </dd>
+              <dd><Tag color={securityColor}>{securityLabel}</Tag></dd>
             </div>
             {encryptionLabel && (
               <div className="info-row">
@@ -710,13 +511,7 @@ export default function InboundInfoModal({
                 <dd className="value-block">
                   <code className="value-code">{encryptionLabel}</code>
                   <Tooltip title={t('copy')}>
-                    <Button
-                      size="small"
-                      className="value-copy"
-                      icon={<CopyOutlined />}
-                      aria-label={t('copy')}
-                      onClick={() => copyText(encryptionLabel, t)}
-                    />
+                    <Button size="small" className="value-copy" icon={<CopyOutlined />} aria-label={t('copy')} onClick={() => copyText(encryptionLabel, t)} />
                   </Tooltip>
                 </dd>
               </div>
@@ -726,9 +521,7 @@ export default function InboundInfoModal({
                 <dt>{t('domainName')}</dt>
                 <dd>
                   {serverNameLabel ? (
-                    <Tag color="green" className="value-tag">
-                      {serverNameLabel}
-                    </Tag>
+                    <Tag color="green" className="value-tag">{serverNameLabel}</Tag>
                   ) : (
                     <Tag color="orange">{t('none')}</Tag>
                   )}
@@ -744,23 +537,17 @@ export default function InboundInfoModal({
           <tbody>
             <tr>
               <td>{t('encryption')}</td>
-              <td>
-                <Tag color="green">{inbound.settings.method as string}</Tag>
-              </td>
+              <td><Tag color="green">{inbound.settings.method as string}</Tag></td>
             </tr>
             {inbound.isSS2022 && (
               <tr>
                 <td>{t('password')}</td>
-                <td>
-                  <Tag className="info-large-tag">{inbound.settings.password as string}</Tag>
-                </td>
+                <td><Tag className="info-large-tag">{inbound.settings.password as string}</Tag></td>
               </tr>
             )}
             <tr>
               <td>{t('pages.inbounds.network')}</td>
-              <td>
-                <Tag color="green">{inbound.settings.network as string}</Tag>
-              </td>
+              <td><Tag color="green">{inbound.settings.network as string}</Tag></td>
             </tr>
           </tbody>
         </table>
@@ -770,64 +557,46 @@ export default function InboundInfoModal({
         <dl className="info-list info-list-block">
           <div className="info-row">
             <dt>{t('pages.inbounds.info.interfaceName')}</dt>
-            <dd>
-              <Tag color="green" className="value-tag">
-                {inbound.settings.name as string}
-              </Tag>
-            </dd>
+            <dd><Tag color="green" className="value-tag">{inbound.settings.name as string}</Tag></dd>
           </div>
           <div className="info-row">
             <dt>{t('pages.inbounds.info.mtu')}</dt>
-            <dd>
-              <Tag color="green">{inbound.settings.mtu as number}</Tag>
-            </dd>
+            <dd><Tag color="green">{inbound.settings.mtu as number}</Tag></dd>
           </div>
-          {Array.isArray(inbound.settings.gateway) &&
-            (inbound.settings.gateway as string[]).length > 0 && (
-              <div className="info-row">
-                <dt>{t('pages.inbounds.info.gateway')}</dt>
-                <dd>
-                  {(inbound.settings.gateway as string[]).map((ip, j) => (
-                    <Tag key={`tun-gw-${j}`} color="green" className="value-tag">
-                      {ip}
-                    </Tag>
-                  ))}
-                </dd>
-              </div>
-            )}
+          {Array.isArray(inbound.settings.gateway) && (inbound.settings.gateway as string[]).length > 0 && (
+            <div className="info-row">
+              <dt>{t('pages.inbounds.info.gateway')}</dt>
+              <dd>
+                {(inbound.settings.gateway as string[]).map((ip, j) => (
+                  <Tag key={`tun-gw-${j}`} color="green" className="value-tag">{ip}</Tag>
+                ))}
+              </dd>
+            </div>
+          )}
           {Array.isArray(inbound.settings.dns) && (inbound.settings.dns as string[]).length > 0 && (
             <div className="info-row">
               <dt>{t('pages.inbounds.info.dns')}</dt>
               <dd>
                 {(inbound.settings.dns as string[]).map((ip, j) => (
-                  <Tag key={`tun-dns-${j}`} color="green">
-                    {ip}
-                  </Tag>
+                  <Tag key={`tun-dns-${j}`} color="green">{ip}</Tag>
                 ))}
               </dd>
             </div>
           )}
           <div className="info-row">
             <dt>{t('pages.inbounds.info.outboundsInterface')}</dt>
-            <dd>
-              <Tag color="green">
-                {(inbound.settings.autoOutboundsInterface as string) || 'auto'}
-              </Tag>
-            </dd>
+            <dd><Tag color="green">{(inbound.settings.autoOutboundsInterface as string) || 'auto'}</Tag></dd>
           </div>
-          {Array.isArray(inbound.settings.autoSystemRoutingTable) &&
-            (inbound.settings.autoSystemRoutingTable as string[]).length > 0 && (
-              <div className="info-row">
-                <dt>{t('pages.inbounds.info.autoSystemRoutes')}</dt>
-                <dd>
-                  {(inbound.settings.autoSystemRoutingTable as string[]).map((cidr, j) => (
-                    <Tag key={`tun-rt-${j}`} color="green">
-                      {cidr}
-                    </Tag>
-                  ))}
-                </dd>
-              </div>
-            )}
+          {Array.isArray(inbound.settings.autoSystemRoutingTable) && (inbound.settings.autoSystemRoutingTable as string[]).length > 0 && (
+            <div className="info-row">
+              <dt>{t('pages.inbounds.info.autoSystemRoutes')}</dt>
+              <dd>
+                {(inbound.settings.autoSystemRoutingTable as string[]).map((cidr, j) => (
+                  <Tag key={`tun-rt-${j}`} color="green">{cidr}</Tag>
+                ))}
+              </dd>
+            </div>
+          )}
         </dl>
       )}
 
@@ -835,23 +604,15 @@ export default function InboundInfoModal({
         <dl className="info-list info-list-block">
           <div className="info-row">
             <dt>{t('pages.inbounds.targetAddress')}</dt>
-            <dd>
-              <Tag color="green" className="value-tag">
-                {inbound.settings.rewriteAddress as string}
-              </Tag>
-            </dd>
+            <dd><Tag color="green" className="value-tag">{inbound.settings.rewriteAddress as string}</Tag></dd>
           </div>
           <div className="info-row">
             <dt>{t('pages.inbounds.destinationPort')}</dt>
-            <dd>
-              <Tag color="green">{inbound.settings.rewritePort as number}</Tag>
-            </dd>
+            <dd><Tag color="green">{inbound.settings.rewritePort as number}</Tag></dd>
           </div>
           <div className="info-row">
             <dt>{t('pages.inbounds.network')}</dt>
-            <dd>
-              <Tag color="green">{inbound.settings.allowedNetwork as string}</Tag>
-            </dd>
+            <dd><Tag color="green">{inbound.settings.allowedNetwork as string}</Tag></dd>
           </div>
           <div className="info-row">
             <dt>{t('pages.inbounds.info.followRedirect')}</dt>
@@ -868,69 +629,44 @@ export default function InboundInfoModal({
         <dl className="info-list info-list-block">
           <div className="info-row">
             <dt>{t('pages.inbounds.form.fakeTlsDomain')}</dt>
-            <dd>
-              <Tag color="green" className="value-tag">
-                {inbound.settings.fakeTlsDomain as string}
-              </Tag>
-            </dd>
+            <dd><Tag color="green" className="value-tag">{inbound.settings.fakeTlsDomain as string}</Tag></dd>
           </div>
           {(() => {
             const s = inbound.settings;
-            const df = s.domainFronting as
-              | { ip?: string; port?: number; proxyProtocol?: boolean }
-              | undefined;
-            const frontingTarget =
-              df && (df.ip || df.port) ? `${df.ip ?? ''}${df.port ? `:${df.port}` : ''}` : '';
+            const df = s.domainFronting as { ip?: string; port?: number; proxyProtocol?: boolean } | undefined;
+            const frontingTarget = df && (df.ip || df.port)
+              ? `${df.ip ?? ''}${df.port ? `:${df.port}` : ''}`
+              : '';
             return (
               <>
                 {frontingTarget && (
                   <div className="info-row">
                     <dt>{t('pages.inbounds.form.mtgDomainFrontingIp')}</dt>
-                    <dd>
-                      <Tag color="blue" className="value-tag">
-                        {frontingTarget}
-                      </Tag>
-                    </dd>
+                    <dd><Tag color="blue" className="value-tag">{frontingTarget}</Tag></dd>
                   </div>
                 )}
                 {df?.proxyProtocol && (
                   <div className="info-row">
                     <dt>{t('pages.inbounds.form.mtgDomainFrontingProxyProtocol')}</dt>
-                    <dd>
-                      <Tag color="green" className="value-tag">
-                        {t('enabled')}
-                      </Tag>
-                    </dd>
+                    <dd><Tag color="green" className="value-tag">{t('enabled')}</Tag></dd>
                   </div>
                 )}
                 {Boolean(s.proxyProtocolListener) && (
                   <div className="info-row">
                     <dt>{t('pages.inbounds.form.mtgProxyProtocolListener')}</dt>
-                    <dd>
-                      <Tag color="green" className="value-tag">
-                        {t('enabled')}
-                      </Tag>
-                    </dd>
+                    <dd><Tag color="green" className="value-tag">{t('enabled')}</Tag></dd>
                   </div>
                 )}
                 {Boolean(s.preferIp) && (
                   <div className="info-row">
                     <dt>{t('pages.inbounds.form.mtgPreferIp')}</dt>
-                    <dd>
-                      <Tag color="blue" className="value-tag">
-                        {s.preferIp as string}
-                      </Tag>
-                    </dd>
+                    <dd><Tag color="blue" className="value-tag">{s.preferIp as string}</Tag></dd>
                   </div>
                 )}
                 {Boolean(s.debug) && (
                   <div className="info-row">
                     <dt>{t('pages.inbounds.form.mtgDebug')}</dt>
-                    <dd>
-                      <Tag color="green" className="value-tag">
-                        {t('enabled')}
-                      </Tag>
-                    </dd>
+                    <dd><Tag color="green" className="value-tag">{t('enabled')}</Tag></dd>
                   </div>
                 )}
               </>
@@ -960,83 +696,35 @@ export default function InboundInfoModal({
           {(inbound.settings.ip as string) && (
             <div className="info-row">
               <dt>IP</dt>
-              <dd>
-                <Tag className="value-tag">{inbound.settings.ip as string}</Tag>
-              </dd>
+              <dd><Tag className="value-tag">{inbound.settings.ip as string}</Tag></dd>
             </div>
           )}
           {inbound.settings.auth === 'password' && Array.isArray(inbound.settings.accounts) && (
             <>
-              {(inbound.settings.accounts as { user: string; pass: string }[]).map(
-                (account, idx) => (
-                  <div key={idx} className="info-row">
-                    <dt>
-                      {t('username')} #{idx + 1}
-                    </dt>
-                    <dd className="account-row">
-                      <Tag color="green" className="value-tag">
-                        {account.user}
-                      </Tag>
-                      <span className="account-sep">:</span>
-                      <Tag className="value-tag">{account.pass}</Tag>
-                      <Tooltip title={t('copy')}>
-                        <Button
-                          size="small"
-                          type="text"
-                          icon={<CopyOutlined />}
-                          aria-label={t('copy')}
-                          onClick={() => copyText(`${account.user}:${account.pass}`, t)}
-                        />
+              {(inbound.settings.accounts as { user: string; pass: string }[]).map((account, idx) => (
+                <div key={idx} className="info-row">
+                  <dt>{t('username')} #{idx + 1}</dt>
+                  <dd className="account-row">
+                    <Tag color="green" className="value-tag">{account.user}</Tag>
+                    <span className="account-sep">:</span>
+                    <Tag className="value-tag">{account.pass}</Tag>
+                    <Tooltip title={t('copy')}>
+                      <Button size="small" type="text" icon={<CopyOutlined />} aria-label={t('copy')} onClick={() => copyText(`${account.user}:${account.pass}`, t)} />
+                    </Tooltip>
+                    <Space size={4} wrap className="share-buttons">
+                      <Tooltip title={`socks5://${account.user}:${account.pass}@${dbInbound.address}:${dbInbound.port}`}>
+                        <Button size="small" onClick={() => copyText(`socks5://${account.user}:${account.pass}@${dbInbound.address}:${dbInbound.port}`, t)}>SOCKS5</Button>
                       </Tooltip>
-                      <Space size={4} wrap className="share-buttons">
-                        <Tooltip
-                          title={`socks5://${account.user}:${account.pass}@${dbInbound.address}:${dbInbound.port}`}
-                        >
-                          <Button
-                            size="small"
-                            onClick={() =>
-                              copyText(
-                                `socks5://${account.user}:${account.pass}@${dbInbound.address}:${dbInbound.port}`,
-                                t,
-                              )
-                            }
-                          >
-                            SOCKS5
-                          </Button>
-                        </Tooltip>
-                        <Tooltip
-                          title={`http://${account.user}:${account.pass}@${dbInbound.address}:${dbInbound.port}`}
-                        >
-                          <Button
-                            size="small"
-                            onClick={() =>
-                              copyText(
-                                `http://${account.user}:${account.pass}@${dbInbound.address}:${dbInbound.port}`,
-                                t,
-                              )
-                            }
-                          >
-                            HTTP
-                          </Button>
-                        </Tooltip>
-                        <Tooltip title="https://t.me/socks?server=...&port=...&user=...&pass=...">
-                          <Button
-                            size="small"
-                            onClick={() =>
-                              copyText(
-                                `https://t.me/socks?server=${encodeURIComponent(dbInbound.address)}&port=${dbInbound.port}&user=${encodeURIComponent(account.user)}&pass=${encodeURIComponent(account.pass)}`,
-                                t,
-                              )
-                            }
-                          >
-                            Telegram
-                          </Button>
-                        </Tooltip>
-                      </Space>
-                    </dd>
-                  </div>
-                ),
-              )}
+                      <Tooltip title={`http://${account.user}:${account.pass}@${dbInbound.address}:${dbInbound.port}`}>
+                        <Button size="small" onClick={() => copyText(`http://${account.user}:${account.pass}@${dbInbound.address}:${dbInbound.port}`, t)}>HTTP</Button>
+                      </Tooltip>
+                      <Tooltip title="https://t.me/socks?server=...&port=...&user=...&pass=...">
+                        <Button size="small" onClick={() => copyText(`https://t.me/socks?server=${encodeURIComponent(dbInbound.address)}&port=${dbInbound.port}&user=${encodeURIComponent(account.user)}&pass=${encodeURIComponent(account.pass)}`, t)}>Telegram</Button>
+                      </Tooltip>
+                    </Space>
+                  </dd>
+                </div>
+              ))}
             </>
           )}
           {inbound.settings.auth === 'noauth' && (
@@ -1045,33 +733,13 @@ export default function InboundInfoModal({
               <dd>
                 <Space size={4} wrap className="share-buttons">
                   <Tooltip title={`socks5://${dbInbound.address}:${dbInbound.port}`}>
-                    <Button
-                      size="small"
-                      onClick={() => copyText(`socks5://${dbInbound.address}:${dbInbound.port}`, t)}
-                    >
-                      SOCKS5
-                    </Button>
+                    <Button size="small" onClick={() => copyText(`socks5://${dbInbound.address}:${dbInbound.port}`, t)}>SOCKS5</Button>
                   </Tooltip>
                   <Tooltip title={`http://${dbInbound.address}:${dbInbound.port}`}>
-                    <Button
-                      size="small"
-                      onClick={() => copyText(`http://${dbInbound.address}:${dbInbound.port}`, t)}
-                    >
-                      HTTP
-                    </Button>
+                    <Button size="small" onClick={() => copyText(`http://${dbInbound.address}:${dbInbound.port}`, t)}>HTTP</Button>
                   </Tooltip>
                   <Tooltip title="https://t.me/socks?server=...&port=...">
-                    <Button
-                      size="small"
-                      onClick={() =>
-                        copyText(
-                          `https://t.me/socks?server=${encodeURIComponent(dbInbound.address)}&port=${dbInbound.port}`,
-                          t,
-                        )
-                      }
-                    >
-                      Telegram
-                    </Button>
+                    <Button size="small" onClick={() => copyText(`https://t.me/socks?server=${encodeURIComponent(dbInbound.address)}&port=${dbInbound.port}`, t)}>Telegram</Button>
                   </Tooltip>
                 </Space>
               </dd>
@@ -1080,57 +748,38 @@ export default function InboundInfoModal({
         </dl>
       )}
 
-      {dbInbound.isHTTP &&
-        Array.isArray(inbound.settings?.accounts) &&
-        (inbound.settings!.accounts as unknown[]).length > 0 && (
-          <dl className="info-list info-list-block">
-            {(inbound.settings!.accounts as { user: string; pass: string }[]).map(
-              (account, idx) => (
-                <div key={idx} className="info-row">
-                  <dt>
-                    {t('username')} #{idx + 1}
-                  </dt>
-                  <dd className="account-row">
-                    <Tag color="green" className="value-tag">
-                      {account.user}
-                    </Tag>
-                    <span className="account-sep">:</span>
-                    <Tag className="value-tag">{account.pass}</Tag>
-                    <Tooltip title={t('copy')}>
-                      <Button
-                        size="small"
-                        icon={<CopyOutlined />}
-                        aria-label={t('copy')}
-                        onClick={() => copyText(`${account.user}:${account.pass}`, t)}
-                      />
-                    </Tooltip>
-                  </dd>
-                </div>
-              ),
-            )}
-          </dl>
-        )}
+      {dbInbound.isHTTP && Array.isArray(inbound.settings?.accounts) && (inbound.settings!.accounts as unknown[]).length > 0 && (
+        <dl className="info-list info-list-block">
+          {(inbound.settings!.accounts as { user: string; pass: string }[]).map((account, idx) => (
+            <div key={idx} className="info-row">
+              <dt>{t('username')} #{idx + 1}</dt>
+              <dd className="account-row">
+                <Tag color="green" className="value-tag">{account.user}</Tag>
+                <span className="account-sep">:</span>
+                <Tag className="value-tag">{account.pass}</Tag>
+                <Tooltip title={t('copy')}>
+                  <Button size="small" icon={<CopyOutlined />} aria-label={t('copy')} onClick={() => copyText(`${account.user}:${account.pass}`, t)} />
+                </Tooltip>
+              </dd>
+            </div>
+          ))}
+        </dl>
+      )}
 
       {dbInbound.isWireguard && inbound.settings && (
         <>
           <dl className="info-list info-list-block">
             <div className="info-row">
               <dt>{t('pages.xray.wireguard.secretKey')}</dt>
-              <dd>
-                <Tag className="value-tag">{inbound.settings.secretKey as string}</Tag>
-              </dd>
+              <dd><Tag className="value-tag">{inbound.settings.secretKey as string}</Tag></dd>
             </div>
             <div className="info-row">
               <dt>{t('pages.xray.wireguard.publicKey')}</dt>
-              <dd>
-                <Tag className="value-tag">{wgPubKey}</Tag>
-              </dd>
+              <dd><Tag className="value-tag">{wgPubKey}</Tag></dd>
             </div>
             <div className="info-row">
               <dt>{t('pages.inbounds.info.mtu')}</dt>
-              <dd>
-                <Tag>{inbound.settings.mtu as number}</Tag>
-              </dd>
+              <dd><Tag>{inbound.settings.mtu as number}</Tag></dd>
             </div>
             <div className="info-row">
               <dt>{t('pages.inbounds.info.noKernelTun')}</dt>
@@ -1141,148 +790,58 @@ export default function InboundInfoModal({
               </dd>
             </div>
           </dl>
-          {Array.isArray(inbound.settings.peers) &&
-            (
-              inbound.settings.peers as {
-                privateKey: string;
-                publicKey: string;
-                psk: string;
-                allowedIPs?: string[];
-                keepAlive?: number;
-              }[]
-            ).map((peer, idx) => (
-              <Fragment key={idx}>
-                <Divider>{t('pages.inbounds.info.peerNumber', { n: idx + 1 })}</Divider>
-                <dl className="info-list info-list-block">
-                  <div className="info-row">
-                    <dt>{t('pages.xray.wireguard.secretKey')}</dt>
-                    <dd>
-                      <Tag className="value-tag">{peer.privateKey}</Tag>
-                    </dd>
-                  </div>
-                  <div className="info-row">
-                    <dt>{t('pages.xray.wireguard.publicKey')}</dt>
-                    <dd>
-                      <Tag className="value-tag">{peer.publicKey}</Tag>
-                    </dd>
-                  </div>
-                  <div className="info-row">
-                    <dt>PSK</dt>
-                    <dd>
-                      <Tag className="value-tag">{peer.psk}</Tag>
-                    </dd>
-                  </div>
-                  <div className="info-row">
-                    <dt>{t('pages.xray.wireguard.allowedIPs')}</dt>
-                    <dd>
-                      {(peer.allowedIPs || []).map((ip, j) => (
-                        <Tag key={`wg-ip-${idx}-${j}`} className="value-tag">
-                          {ip}
-                        </Tag>
-                      ))}
-                    </dd>
-                  </div>
-                  <div className="info-row">
-                    <dt>{t('pages.inbounds.info.keepAlive')}</dt>
-                    <dd>
-                      <Tag>{peer.keepAlive}</Tag>
-                    </dd>
-                  </div>
-                </dl>
-                {wireguardConfigs[idx] && (
-                  <div className="link-panel">
-                    <div className="link-panel-header">
-                      <Tag color="green">
-                        {t('pages.inbounds.info.peerNumberConfig', { n: idx + 1 })}
-                      </Tag>
-                      <Tooltip title={t('copy')}>
-                        <Button
-                          size="small"
-                          icon={<CopyOutlined />}
-                          aria-label={t('copy')}
-                          onClick={() => copyText(wireguardConfigs[idx], t)}
-                        />
-                      </Tooltip>
-                      <Tooltip title={t('download')}>
-                        <Button
-                          size="small"
-                          icon={<DownloadOutlined />}
-                          aria-label={t('download')}
-                          onClick={() =>
-                            downloadText(wireguardConfigs[idx], `peer-${idx + 1}.conf`)
-                          }
-                        />
-                      </Tooltip>
-                    </div>
-                    <code className="link-panel-text">{wireguardConfigs[idx]}</code>
-                  </div>
-                )}
-                {wireguardLinks[idx] && (
-                  <div className="link-panel">
-                    <div className="link-panel-header">
-                      <Tag color="green">Peer {idx + 1} link</Tag>
-                      <Tooltip title={t('copy')}>
-                        <Button
-                          size="small"
-                          icon={<CopyOutlined />}
-                          aria-label={t('copy')}
-                          onClick={() => copyText(wireguardLinks[idx], t)}
-                        />
-                      </Tooltip>
-                    </div>
-                    <code className="link-panel-text">{wireguardLinks[idx]}</code>
-                  </div>
-                )}
-              </Fragment>
-            ))}
-        </>
-      )}
-
-      {inbound?.protocol === Protocols.AMNEZIAWG && amneziawgConfigs.length > 0 && (
-        <>
-          <Divider>{t('pages.inbounds.copyLink')}</Divider>
-          {amneziawgConfigs.map((cfg, idx) => (
+          {Array.isArray(inbound.settings.peers) && (inbound.settings.peers as { privateKey: string; publicKey: string; psk: string; allowedIPs?: string[]; keepAlive?: number }[]).map((peer, idx) => (
             <Fragment key={idx}>
-              {cfg && (
+              <Divider>{t('pages.inbounds.info.peerNumber', { n: idx + 1 })}</Divider>
+              <dl className="info-list info-list-block">
+                <div className="info-row">
+                  <dt>{t('pages.xray.wireguard.secretKey')}</dt>
+                  <dd><Tag className="value-tag">{peer.privateKey}</Tag></dd>
+                </div>
+                <div className="info-row">
+                  <dt>{t('pages.xray.wireguard.publicKey')}</dt>
+                  <dd><Tag className="value-tag">{peer.publicKey}</Tag></dd>
+                </div>
+                <div className="info-row">
+                  <dt>PSK</dt>
+                  <dd><Tag className="value-tag">{peer.psk}</Tag></dd>
+                </div>
+                <div className="info-row">
+                  <dt>{t('pages.xray.wireguard.allowedIPs')}</dt>
+                  <dd>
+                    {(peer.allowedIPs || []).map((ip, j) => (
+                      <Tag key={`wg-ip-${idx}-${j}`} className="value-tag">{ip}</Tag>
+                    ))}
+                  </dd>
+                </div>
+                <div className="info-row">
+                  <dt>{t('pages.inbounds.info.keepAlive')}</dt>
+                  <dd><Tag>{peer.keepAlive}</Tag></dd>
+                </div>
+              </dl>
+              {wireguardConfigs[idx] && (
                 <div className="link-panel">
                   <div className="link-panel-header">
-                    <Tag color="green">
-                      {t('pages.inbounds.info.peerNumberConfig', { n: idx + 1 })}
-                    </Tag>
+                    <Tag color="green">{t('pages.inbounds.info.peerNumberConfig', { n: idx + 1 })}</Tag>
                     <Tooltip title={t('copy')}>
-                      <Button
-                        size="small"
-                        icon={<CopyOutlined />}
-                        aria-label={t('copy')}
-                        onClick={() => copyText(cfg, t)}
-                      />
+                      <Button size="small" icon={<CopyOutlined />} aria-label={t('copy')} onClick={() => copyText(wireguardConfigs[idx], t)} />
                     </Tooltip>
                     <Tooltip title={t('download')}>
-                      <Button
-                        size="small"
-                        icon={<DownloadOutlined />}
-                        aria-label={t('download')}
-                        onClick={() => downloadText(cfg, `peer-${idx + 1}.conf`)}
-                      />
+                      <Button size="small" icon={<DownloadOutlined />} aria-label={t('download')} onClick={() => downloadText(wireguardConfigs[idx], `peer-${idx + 1}.conf`)} />
                     </Tooltip>
                   </div>
-                  <code className="link-panel-text">{cfg}</code>
+                  <code className="link-panel-text">{wireguardConfigs[idx]}</code>
                 </div>
               )}
-              {amneziawgLinks[idx] && (
+              {wireguardLinks[idx] && (
                 <div className="link-panel">
                   <div className="link-panel-header">
                     <Tag color="green">Peer {idx + 1} link</Tag>
                     <Tooltip title={t('copy')}>
-                      <Button
-                        size="small"
-                        icon={<CopyOutlined />}
-                        aria-label={t('copy')}
-                        onClick={() => copyText(amneziawgLinks[idx], t)}
-                      />
+                      <Button size="small" icon={<CopyOutlined />} aria-label={t('copy')} onClick={() => copyText(wireguardLinks[idx], t)} />
                     </Tooltip>
                   </div>
-                  <code className="link-panel-text">{amneziawgLinks[idx]}</code>
+                  <code className="link-panel-text">{wireguardLinks[idx]}</code>
                 </div>
               )}
             </Fragment>
@@ -1298,12 +857,7 @@ export default function InboundInfoModal({
               <div className="link-panel-header">
                 <Tag color="green">{link.remark || `Link ${idx + 1}`}</Tag>
                 <Tooltip title={t('copy')}>
-                  <Button
-                    size="small"
-                    icon={<CopyOutlined />}
-                    aria-label={t('copy')}
-                    onClick={() => copyText(link.link, t)}
-                  />
+                  <Button size="small" icon={<CopyOutlined />} aria-label={t('copy')} onClick={() => copyText(link.link, t)} />
                 </Tooltip>
               </div>
               <code className="link-panel-text">{link.link}</code>
@@ -1321,14 +875,7 @@ export default function InboundInfoModal({
   tabItems.push({ key: 'inbound', label: t('pages.xray.rules.inbound'), children: inboundTab });
 
   return (
-    <Modal
-      open={open}
-      onCancel={onClose}
-      title={t('pages.inbounds.inboundInfo')}
-      footer={null}
-      width={640}
-      destroyOnHidden
-    >
+    <Modal open={open} onCancel={onClose} title={t('pages.inbounds.inboundInfo')} footer={null} width={640} destroyOnHidden>
       <Tabs activeKey={activeTab} onChange={setActiveTab} items={tabItems} />
     </Modal>
   );

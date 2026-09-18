@@ -16,40 +16,6 @@ import (
 	tu "github.com/mymmrac/telego/telegoutil"
 )
 
-// recoverBotPanic must be deferred by every bot handler entry point: telego's
-// dispatch has no recovery of its own, so one bad update would kill the panel.
-func recoverBotPanic() {
-	if r := recover(); r != nil {
-		logger.Error("Recovered panic in Telegram bot handler:", r)
-	}
-}
-
-// runBotHandler runs a bot handler on a worker slot and recovers panics: a bad
-// callback must not take down the whole panel, the way a cron panic would not.
-func runBotHandler(fn func()) {
-	messageWorkerPool <- struct{}{}
-	defer func() { <-messageWorkerPool }()
-	defer recoverBotPanic()
-	fn()
-}
-
-// chooseInboundClient fetches the inbound once and reuses the row: the inline
-// keyboard outlives the inbound, so a stale tap must answer an error, not panic.
-func (t *Tgbot) chooseInboundClient(callbackQuery *telego.CallbackQuery, chatId int64, inboundID int, action string) {
-	inbound, err := t.inboundService.GetInbound(inboundID)
-	if err != nil {
-		logger.Warning("chooseInboundClient GetInbound failed:", err)
-		t.sendCallbackAnswerTgBot(callbackQuery.ID, t.I18nBot("tgbot.answers.getInboundsFailed"))
-		return
-	}
-	clientsKB, err := t.getInboundClientsFor(inbound, action)
-	if err != nil {
-		t.sendCallbackAnswerTgBot(callbackQuery.ID, err.Error())
-		return
-	}
-	t.SendMsgToTgbot(chatId, t.I18nBot("tgbot.answers.chooseClient", "Inbound=="+inbound.Remark), clientsKB)
-}
-
 // OnReceive starts the message receiving loop for the Telegram bot.
 func (t *Tgbot) OnReceive() {
 	params := telego.GetUpdatesParams{
@@ -81,53 +47,52 @@ func (t *Tgbot) OnReceive() {
 		tgBotMutex.Unlock()
 
 		h.HandleMessage(func(ctx *th.Context, message telego.Message) error {
-			defer recoverBotPanic()
 			userStateMgr.clear(message.Chat.ID)
 			t.SendMsgToTgbot(message.Chat.ID, t.I18nBot("tgbot.keyboardClosed"), tu.ReplyKeyboardRemove())
 			return nil
 		}, th.TextEqual(t.I18nBot("tgbot.buttons.closeKeyboard")))
 
 		h.HandleMessage(func(ctx *th.Context, message telego.Message) error {
-			defer recoverBotPanic()
 			if !t.isCommandForCurrentBot(&message) {
 				return nil
 			}
 
 			// Use goroutine with worker pool for concurrent command processing
-			go runBotHandler(func() {
+			go func() {
+				messageWorkerPool <- struct{}{}        // Acquire worker
+				defer func() { <-messageWorkerPool }() // Release worker
+
 				userStateMgr.clear(message.Chat.ID)
 				t.answerCommand(&message, message.Chat.ID, checkAdmin(message.From.ID))
-			})
+			}()
 			return nil
 		}, th.AnyCommand())
 
 		h.HandleCallbackQuery(func(ctx *th.Context, query telego.CallbackQuery) error {
 			// Use goroutine with worker pool for concurrent callback processing
-			go runBotHandler(func() {
+			go func() {
+				messageWorkerPool <- struct{}{}        // Acquire worker
+				defer func() { <-messageWorkerPool }() // Release worker
+
 				userStateMgr.clear(query.Message.GetChat().ID)
 				t.answerCallback(&query, checkAdmin(query.From.ID))
-			})
+			}()
 			return nil
 		}, th.AnyCallbackQueryWithMessage())
 
 		h.HandleMessage(func(ctx *th.Context, message telego.Message) error {
-			defer recoverBotPanic()
 			userStateMgr.maybePrune(time.Hour)
 			if userState, exists := userStateMgr.get(message.Chat.ID); exists {
-				// Only a wizard step touches the draft, so only it takes the lock.
-				draft := addClientDrafts.forChat(message.Chat.ID)
-				draft.Lock()
-				defer draft.Unlock()
 				switch userState {
 				case "awaiting_email":
-					if draft.email == strings.TrimSpace(message.Text) {
+					if client_Email == strings.TrimSpace(message.Text) {
 						t.SendMsgToTgbotDeleteAfter(message.Chat.ID, t.I18nBot("tgbot.messages.using_default_value"), 3, tu.ReplyKeyboardRemove())
 						userStateMgr.clear(message.Chat.ID)
 						return nil
 					}
 
-					draft.email = strings.TrimSpace(message.Text)
-					if t.isSingleWord(draft.email) {
+					client_Email = strings.TrimSpace(message.Text)
+					if t.isSingleWord(client_Email) {
 						userStateMgr.set(message.Chat.ID, "awaiting_email")
 
 						cancel_btn_markup := tu.InlineKeyboard(
@@ -140,26 +105,26 @@ func (t *Tgbot) OnReceive() {
 					} else {
 						t.SendMsgToTgbotDeleteAfter(message.Chat.ID, t.I18nBot("tgbot.messages.received_email"), 3, tu.ReplyKeyboardRemove())
 						userStateMgr.clear(message.Chat.ID)
-						t.addClient(message.Chat.ID, draft, t.BuildClientDraftMessage(draft))
+						t.addClient(message.Chat.ID, t.BuildClientDraftMessage())
 					}
 				case "awaiting_comment":
-					if draft.comment == strings.TrimSpace(message.Text) {
+					if client_Comment == strings.TrimSpace(message.Text) {
 						t.SendMsgToTgbotDeleteAfter(message.Chat.ID, t.I18nBot("tgbot.messages.using_default_value"), 3, tu.ReplyKeyboardRemove())
 						userStateMgr.clear(message.Chat.ID)
 						return nil
 					}
 
-					draft.comment = strings.TrimSpace(message.Text)
+					client_Comment = strings.TrimSpace(message.Text)
 					t.SendMsgToTgbotDeleteAfter(message.Chat.ID, t.I18nBot("tgbot.messages.received_comment"), 3, tu.ReplyKeyboardRemove())
 					userStateMgr.clear(message.Chat.ID)
-					t.addClient(message.Chat.ID, draft, t.BuildClientDraftMessage(draft))
+					t.addClient(message.Chat.ID, t.BuildClientDraftMessage())
 				case "awaiting_tg_id":
 					input := strings.TrimSpace(message.Text)
 					if input == "" || input == "-" || strings.EqualFold(input, "none") {
-						draft.tgID = ""
+						client_TgID = ""
 						t.SendMsgToTgbotDeleteAfter(message.Chat.ID, t.I18nBot("tgbot.messages.using_default_value"), 3, tu.ReplyKeyboardRemove())
 						userStateMgr.clear(message.Chat.ID)
-						t.addClient(message.Chat.ID, draft, t.BuildClientDraftMessage(draft))
+						t.addClient(message.Chat.ID, t.BuildClientDraftMessage())
 						return nil
 					}
 					if _, err := strconv.ParseInt(input, 10, 64); err != nil {
@@ -171,10 +136,10 @@ func (t *Tgbot) OnReceive() {
 						t.SendMsgToTgbot(message.Chat.ID, t.I18nBot("tgbot.messages.incorrect_input"), cancel_btn_markup)
 						return nil
 					}
-					draft.tgID = input
+					client_TgID = input
 					t.SendMsgToTgbotDeleteAfter(message.Chat.ID, t.I18nBot("tgbot.messages.userSaved"), 3, tu.ReplyKeyboardRemove())
 					userStateMgr.clear(message.Chat.ID)
-					t.addClient(message.Chat.ID, draft, t.BuildClientDraftMessage(draft))
+					t.addClient(message.Chat.ID, t.BuildClientDraftMessage())
 				}
 			} else {
 				if message.UsersShared != nil {
@@ -316,22 +281,10 @@ func isCommandForBot(text string, username string) bool {
 func (t *Tgbot) answerCallback(callbackQuery *telego.CallbackQuery, isAdmin bool) {
 	chatId := callbackQuery.Message.GetChat().ID
 
-	// Only an admin's wizard callbacks touch a draft, so only they take its lock:
-	// a report tap must not wait on a slot, a rejected chat must not be stored.
-	var draft *clientDraft
-	if isAdmin && isAddClientStep(callbackQuery.Data) {
-		draft = addClientDrafts.forChat(chatId)
-		draft.Lock()
-		defer draft.Unlock()
-	}
-
 	if isAdmin {
 		// get query from hash storage
 		decodedQuery, err := t.decodeQuery(callbackQuery.Data)
 		if err != nil {
-			// A button older than the 20-minute hash window is the common case
-			// here; the answer clears it, the message outlives a failed send.
-			t.sendCallbackAnswerTgBot(callbackQuery.ID, t.I18nBot("tgbot.noQuery"))
 			t.SendMsgToTgbot(chatId, t.I18nBot("tgbot.noQuery"))
 			return
 		}
@@ -341,26 +294,47 @@ func (t *Tgbot) answerCallback(callbackQuery *telego.CallbackQuery, isAdmin bool
 			email := dataArray[1]
 			switch dataArray[0] {
 			case "get_clients_for_sub":
-				inboundIdInt, err := strconv.Atoi(dataArray[1])
+				inboundId := dataArray[1]
+				inboundIdInt, err := strconv.Atoi(inboundId)
 				if err != nil {
 					t.sendCallbackAnswerTgBot(callbackQuery.ID, err.Error())
 					return
 				}
-				t.chooseInboundClient(callbackQuery, chatId, inboundIdInt, "client_sub_links")
+				clientsKB, err := t.getInboundClientsFor(inboundIdInt, "client_sub_links")
+				if err != nil {
+					t.sendCallbackAnswerTgBot(callbackQuery.ID, err.Error())
+					return
+				}
+				inbound, _ := t.inboundService.GetInbound(inboundIdInt)
+				t.SendMsgToTgbot(chatId, t.I18nBot("tgbot.answers.chooseClient", "Inbound=="+inbound.Remark), clientsKB)
 			case "get_clients_for_individual":
-				inboundIdInt, err := strconv.Atoi(dataArray[1])
+				inboundId := dataArray[1]
+				inboundIdInt, err := strconv.Atoi(inboundId)
 				if err != nil {
 					t.sendCallbackAnswerTgBot(callbackQuery.ID, err.Error())
 					return
 				}
-				t.chooseInboundClient(callbackQuery, chatId, inboundIdInt, "client_individual_links")
+				clientsKB, err := t.getInboundClientsFor(inboundIdInt, "client_individual_links")
+				if err != nil {
+					t.sendCallbackAnswerTgBot(callbackQuery.ID, err.Error())
+					return
+				}
+				inbound, _ := t.inboundService.GetInbound(inboundIdInt)
+				t.SendMsgToTgbot(chatId, t.I18nBot("tgbot.answers.chooseClient", "Inbound=="+inbound.Remark), clientsKB)
 			case "get_clients_for_qr":
-				inboundIdInt, err := strconv.Atoi(dataArray[1])
+				inboundId := dataArray[1]
+				inboundIdInt, err := strconv.Atoi(inboundId)
 				if err != nil {
 					t.sendCallbackAnswerTgBot(callbackQuery.ID, err.Error())
 					return
 				}
-				t.chooseInboundClient(callbackQuery, chatId, inboundIdInt, "client_qr_links")
+				clientsKB, err := t.getInboundClientsFor(inboundIdInt, "client_qr_links")
+				if err != nil {
+					t.sendCallbackAnswerTgBot(callbackQuery.ID, err.Error())
+					return
+				}
+				inbound, _ := t.inboundService.GetInbound(inboundIdInt)
+				t.SendMsgToTgbot(chatId, t.I18nBot("tgbot.answers.chooseClient", "Inbound=="+inbound.Remark), clientsKB)
 			case "client_sub_links":
 				t.sendClientSubLinks(chatId, email)
 				return
@@ -465,7 +439,16 @@ func (t *Tgbot) answerCallback(callbackQuery *telego.CallbackQuery, isAdmin bool
 						if len(dataArray) == 4 {
 							num, err := strconv.Atoi(dataArray[3])
 							if err == nil {
-								inputNumber = updateNumericInput(inputNumber, num)
+								switch num {
+								case -2:
+									inputNumber = 0
+								case -1:
+									if inputNumber > 0 {
+										inputNumber = (inputNumber / 10)
+									}
+								default:
+									inputNumber = (inputNumber * 10) + num
+								}
 							}
 							if inputNumber == oldInputNumber {
 								t.sendCallbackAnswerTgBot(callbackQuery.ID, t.I18nBot("tgbot.answers.successfulOperation"))
@@ -476,7 +459,34 @@ func (t *Tgbot) answerCallback(callbackQuery *telego.CallbackQuery, isAdmin bool
 								return
 							}
 						}
-						inlineKeyboard := t.numericKeypad(numericKeypadSpec{dataBase: "limit_traffic", dataArgs: email + " ", cancelData: "client_cancel " + email, confirmLabelKey: "tgbot.buttons.confirmNumberAdd"}, inputNumber)
+						inlineKeyboard := tu.InlineKeyboard(
+							tu.InlineKeyboardRow(
+								tu.InlineKeyboardButton(t.I18nBot("tgbot.buttons.cancel")).WithCallbackData(t.encodeQuery("client_cancel "+email)),
+							),
+							tu.InlineKeyboardRow(
+								tu.InlineKeyboardButton(t.I18nBot("tgbot.buttons.confirmNumberAdd", "Num=="+strconv.Itoa(inputNumber))).WithCallbackData(t.encodeQuery("limit_traffic_c "+email+" "+strconv.Itoa(inputNumber))),
+							),
+							tu.InlineKeyboardRow(
+								tu.InlineKeyboardButton("1").WithCallbackData(t.encodeQuery("limit_traffic_in "+email+" "+strconv.Itoa(inputNumber)+" 1")),
+								tu.InlineKeyboardButton("2").WithCallbackData(t.encodeQuery("limit_traffic_in "+email+" "+strconv.Itoa(inputNumber)+" 2")),
+								tu.InlineKeyboardButton("3").WithCallbackData(t.encodeQuery("limit_traffic_in "+email+" "+strconv.Itoa(inputNumber)+" 3")),
+							),
+							tu.InlineKeyboardRow(
+								tu.InlineKeyboardButton("4").WithCallbackData(t.encodeQuery("limit_traffic_in "+email+" "+strconv.Itoa(inputNumber)+" 4")),
+								tu.InlineKeyboardButton("5").WithCallbackData(t.encodeQuery("limit_traffic_in "+email+" "+strconv.Itoa(inputNumber)+" 5")),
+								tu.InlineKeyboardButton("6").WithCallbackData(t.encodeQuery("limit_traffic_in "+email+" "+strconv.Itoa(inputNumber)+" 6")),
+							),
+							tu.InlineKeyboardRow(
+								tu.InlineKeyboardButton("7").WithCallbackData(t.encodeQuery("limit_traffic_in "+email+" "+strconv.Itoa(inputNumber)+" 7")),
+								tu.InlineKeyboardButton("8").WithCallbackData(t.encodeQuery("limit_traffic_in "+email+" "+strconv.Itoa(inputNumber)+" 8")),
+								tu.InlineKeyboardButton("9").WithCallbackData(t.encodeQuery("limit_traffic_in "+email+" "+strconv.Itoa(inputNumber)+" 9")),
+							),
+							tu.InlineKeyboardRow(
+								tu.InlineKeyboardButton("🔄").WithCallbackData(t.encodeQuery("limit_traffic_in "+email+" "+strconv.Itoa(inputNumber)+" -2")),
+								tu.InlineKeyboardButton("0").WithCallbackData(t.encodeQuery("limit_traffic_in "+email+" "+strconv.Itoa(inputNumber)+" 0")),
+								tu.InlineKeyboardButton("⬅️").WithCallbackData(t.encodeQuery("limit_traffic_in "+email+" "+strconv.Itoa(inputNumber)+" -1")),
+							),
+						)
 						t.editMessageCallbackTgBot(chatId, callbackQuery.Message.GetMessageID(), inlineKeyboard)
 						return
 					}
@@ -485,11 +495,11 @@ func (t *Tgbot) answerCallback(callbackQuery *telego.CallbackQuery, isAdmin bool
 				t.searchClient(chatId, email, callbackQuery.Message.GetMessageID())
 			case "add_client_limit_traffic_c":
 				limitTraffic, _ := strconv.ParseInt(dataArray[1], 10, 64)
-				draft.totalGB = limitTraffic * 1024 * 1024 * 1024
+				client_TotalGB = limitTraffic * 1024 * 1024 * 1024
 				messageId := callbackQuery.Message.GetMessageID()
-				message_text := t.BuildClientDraftMessage(draft)
+				message_text := t.BuildClientDraftMessage()
 
-				t.addClient(callbackQuery.Message.GetChat().ID, draft, message_text, messageId)
+				t.addClient(callbackQuery.Message.GetChat().ID, message_text, messageId)
 				t.sendCallbackAnswerTgBot(callbackQuery.ID, t.I18nBot("tgbot.answers.successfulOperation"))
 			case "add_client_limit_traffic_in":
 				if len(dataArray) >= 2 {
@@ -499,7 +509,16 @@ func (t *Tgbot) answerCallback(callbackQuery *telego.CallbackQuery, isAdmin bool
 						if len(dataArray) == 3 {
 							num, err := strconv.Atoi(dataArray[2])
 							if err == nil {
-								inputNumber = updateNumericInput(inputNumber, num)
+								switch num {
+								case -2:
+									inputNumber = 0
+								case -1:
+									if inputNumber > 0 {
+										inputNumber = (inputNumber / 10)
+									}
+								default:
+									inputNumber = (inputNumber * 10) + num
+								}
 							}
 							if inputNumber == oldInputNumber {
 								t.sendCallbackAnswerTgBot(callbackQuery.ID, t.I18nBot("tgbot.answers.successfulOperation"))
@@ -510,7 +529,34 @@ func (t *Tgbot) answerCallback(callbackQuery *telego.CallbackQuery, isAdmin bool
 								return
 							}
 						}
-						inlineKeyboard := t.numericKeypad(numericKeypadSpec{dataBase: "add_client_limit_traffic", cancelData: "add_client_default_traffic_exp", confirmLabelKey: "tgbot.buttons.confirmNumberAdd"}, inputNumber)
+						inlineKeyboard := tu.InlineKeyboard(
+							tu.InlineKeyboardRow(
+								tu.InlineKeyboardButton(t.I18nBot("tgbot.buttons.cancel")).WithCallbackData(t.encodeQuery("add_client_default_traffic_exp")),
+							),
+							tu.InlineKeyboardRow(
+								tu.InlineKeyboardButton(t.I18nBot("tgbot.buttons.confirmNumberAdd", "Num=="+strconv.Itoa(inputNumber))).WithCallbackData(t.encodeQuery("add_client_limit_traffic_c "+strconv.Itoa(inputNumber))),
+							),
+							tu.InlineKeyboardRow(
+								tu.InlineKeyboardButton("1").WithCallbackData(t.encodeQuery("add_client_limit_traffic_in "+strconv.Itoa(inputNumber)+" 1")),
+								tu.InlineKeyboardButton("2").WithCallbackData(t.encodeQuery("add_client_limit_traffic_in "+strconv.Itoa(inputNumber)+" 2")),
+								tu.InlineKeyboardButton("3").WithCallbackData(t.encodeQuery("add_client_limit_traffic_in "+strconv.Itoa(inputNumber)+" 3")),
+							),
+							tu.InlineKeyboardRow(
+								tu.InlineKeyboardButton("4").WithCallbackData(t.encodeQuery("add_client_limit_traffic_in "+strconv.Itoa(inputNumber)+" 4")),
+								tu.InlineKeyboardButton("5").WithCallbackData(t.encodeQuery("add_client_limit_traffic_in "+strconv.Itoa(inputNumber)+" 5")),
+								tu.InlineKeyboardButton("6").WithCallbackData(t.encodeQuery("add_client_limit_traffic_in "+strconv.Itoa(inputNumber)+" 6")),
+							),
+							tu.InlineKeyboardRow(
+								tu.InlineKeyboardButton("7").WithCallbackData(t.encodeQuery("add_client_limit_traffic_in "+strconv.Itoa(inputNumber)+" 7")),
+								tu.InlineKeyboardButton("8").WithCallbackData(t.encodeQuery("add_client_limit_traffic_in "+strconv.Itoa(inputNumber)+" 8")),
+								tu.InlineKeyboardButton("9").WithCallbackData(t.encodeQuery("add_client_limit_traffic_in "+strconv.Itoa(inputNumber)+" 9")),
+							),
+							tu.InlineKeyboardRow(
+								tu.InlineKeyboardButton("🔄").WithCallbackData(t.encodeQuery("add_client_limit_traffic_in "+strconv.Itoa(inputNumber)+" -2")),
+								tu.InlineKeyboardButton("0").WithCallbackData(t.encodeQuery("add_client_limit_traffic_in "+strconv.Itoa(inputNumber)+" 0")),
+								tu.InlineKeyboardButton("⬅️").WithCallbackData(t.encodeQuery("add_client_limit_traffic_in "+strconv.Itoa(inputNumber)+" -1")),
+							),
+						)
 						t.editMessageCallbackTgBot(chatId, callbackQuery.Message.GetMessageID(), inlineKeyboard)
 						return
 					}
@@ -593,7 +639,16 @@ func (t *Tgbot) answerCallback(callbackQuery *telego.CallbackQuery, isAdmin bool
 						if len(dataArray) == 4 {
 							num, err := strconv.Atoi(dataArray[3])
 							if err == nil {
-								inputNumber = updateNumericInput(inputNumber, num)
+								switch num {
+								case -2:
+									inputNumber = 0
+								case -1:
+									if inputNumber > 0 {
+										inputNumber = (inputNumber / 10)
+									}
+								default:
+									inputNumber = (inputNumber * 10) + num
+								}
 							}
 							if inputNumber == oldInputNumber {
 								t.sendCallbackAnswerTgBot(callbackQuery.ID, t.I18nBot("tgbot.answers.successfulOperation"))
@@ -604,7 +659,34 @@ func (t *Tgbot) answerCallback(callbackQuery *telego.CallbackQuery, isAdmin bool
 								return
 							}
 						}
-						inlineKeyboard := t.numericKeypad(numericKeypadSpec{dataBase: "reset_exp", dataArgs: email + " ", cancelData: "client_cancel " + email, confirmLabelKey: "tgbot.buttons.confirmNumber"}, inputNumber)
+						inlineKeyboard := tu.InlineKeyboard(
+							tu.InlineKeyboardRow(
+								tu.InlineKeyboardButton(t.I18nBot("tgbot.buttons.cancel")).WithCallbackData(t.encodeQuery("client_cancel "+email)),
+							),
+							tu.InlineKeyboardRow(
+								tu.InlineKeyboardButton(t.I18nBot("tgbot.buttons.confirmNumber", "Num=="+strconv.Itoa(inputNumber))).WithCallbackData(t.encodeQuery("reset_exp_c "+email+" "+strconv.Itoa(inputNumber))),
+							),
+							tu.InlineKeyboardRow(
+								tu.InlineKeyboardButton("1").WithCallbackData(t.encodeQuery("reset_exp_in "+email+" "+strconv.Itoa(inputNumber)+" 1")),
+								tu.InlineKeyboardButton("2").WithCallbackData(t.encodeQuery("reset_exp_in "+email+" "+strconv.Itoa(inputNumber)+" 2")),
+								tu.InlineKeyboardButton("3").WithCallbackData(t.encodeQuery("reset_exp_in "+email+" "+strconv.Itoa(inputNumber)+" 3")),
+							),
+							tu.InlineKeyboardRow(
+								tu.InlineKeyboardButton("4").WithCallbackData(t.encodeQuery("reset_exp_in "+email+" "+strconv.Itoa(inputNumber)+" 4")),
+								tu.InlineKeyboardButton("5").WithCallbackData(t.encodeQuery("reset_exp_in "+email+" "+strconv.Itoa(inputNumber)+" 5")),
+								tu.InlineKeyboardButton("6").WithCallbackData(t.encodeQuery("reset_exp_in "+email+" "+strconv.Itoa(inputNumber)+" 6")),
+							),
+							tu.InlineKeyboardRow(
+								tu.InlineKeyboardButton("7").WithCallbackData(t.encodeQuery("reset_exp_in "+email+" "+strconv.Itoa(inputNumber)+" 7")),
+								tu.InlineKeyboardButton("8").WithCallbackData(t.encodeQuery("reset_exp_in "+email+" "+strconv.Itoa(inputNumber)+" 8")),
+								tu.InlineKeyboardButton("9").WithCallbackData(t.encodeQuery("reset_exp_in "+email+" "+strconv.Itoa(inputNumber)+" 9")),
+							),
+							tu.InlineKeyboardRow(
+								tu.InlineKeyboardButton("🔄").WithCallbackData(t.encodeQuery("reset_exp_in "+email+" "+strconv.Itoa(inputNumber)+" -2")),
+								tu.InlineKeyboardButton("0").WithCallbackData(t.encodeQuery("reset_exp_in "+email+" "+strconv.Itoa(inputNumber)+" 0")),
+								tu.InlineKeyboardButton("⬅️").WithCallbackData(t.encodeQuery("reset_exp_in "+email+" "+strconv.Itoa(inputNumber)+" -1")),
+							),
+						)
 						t.editMessageCallbackTgBot(chatId, callbackQuery.Message.GetMessageID(), inlineKeyboard)
 						return
 					}
@@ -612,15 +694,24 @@ func (t *Tgbot) answerCallback(callbackQuery *telego.CallbackQuery, isAdmin bool
 				t.sendCallbackAnswerTgBot(callbackQuery.ID, t.I18nBot("tgbot.answers.errorOperation"))
 				t.searchClient(chatId, email, callbackQuery.Message.GetMessageID())
 			case "add_client_reset_exp_c":
-				// The wizard's presets and its custom keypad land in this one case, so a
-				// second tap replaces the term it set; 0 is the Unlimited button.
+				client_ExpiryTime = 0
 				days, _ := strconv.ParseInt(dataArray[1], 10, 64)
-				draft.expiryTime = -days * 24 * 60 * 60000
+				var date int64
+				if client_ExpiryTime > 0 {
+					if client_ExpiryTime-time.Now().Unix()*1000 < 0 {
+						date = -(days * 24 * 60 * 60000)
+					} else {
+						date = client_ExpiryTime + days*24*60*60000
+					}
+				} else {
+					date = client_ExpiryTime - days*24*60*60000
+				}
+				client_ExpiryTime = date
 
 				messageId := callbackQuery.Message.GetMessageID()
-				message_text := t.BuildClientDraftMessage(draft)
+				message_text := t.BuildClientDraftMessage()
 
-				t.addClient(callbackQuery.Message.GetChat().ID, draft, message_text, messageId)
+				t.addClient(callbackQuery.Message.GetChat().ID, message_text, messageId)
 				t.sendCallbackAnswerTgBot(callbackQuery.ID, t.I18nBot("tgbot.answers.successfulOperation"))
 			case "add_client_reset_exp_in":
 				if len(dataArray) >= 2 {
@@ -630,7 +721,16 @@ func (t *Tgbot) answerCallback(callbackQuery *telego.CallbackQuery, isAdmin bool
 						if len(dataArray) == 3 {
 							num, err := strconv.Atoi(dataArray[2])
 							if err == nil {
-								inputNumber = updateNumericInput(inputNumber, num)
+								switch num {
+								case -2:
+									inputNumber = 0
+								case -1:
+									if inputNumber > 0 {
+										inputNumber = (inputNumber / 10)
+									}
+								default:
+									inputNumber = (inputNumber * 10) + num
+								}
 							}
 							if inputNumber == oldInputNumber {
 								t.sendCallbackAnswerTgBot(callbackQuery.ID, t.I18nBot("tgbot.answers.successfulOperation"))
@@ -641,7 +741,34 @@ func (t *Tgbot) answerCallback(callbackQuery *telego.CallbackQuery, isAdmin bool
 								return
 							}
 						}
-						inlineKeyboard := t.numericKeypad(numericKeypadSpec{dataBase: "add_client_reset_exp", cancelData: "add_client_default_traffic_exp", confirmLabelKey: "tgbot.buttons.confirmNumberAdd"}, inputNumber)
+						inlineKeyboard := tu.InlineKeyboard(
+							tu.InlineKeyboardRow(
+								tu.InlineKeyboardButton(t.I18nBot("tgbot.buttons.cancel")).WithCallbackData(t.encodeQuery("add_client_default_traffic_exp")),
+							),
+							tu.InlineKeyboardRow(
+								tu.InlineKeyboardButton(t.I18nBot("tgbot.buttons.confirmNumberAdd", "Num=="+strconv.Itoa(inputNumber))).WithCallbackData(t.encodeQuery("add_client_reset_exp_c "+strconv.Itoa(inputNumber))),
+							),
+							tu.InlineKeyboardRow(
+								tu.InlineKeyboardButton("1").WithCallbackData(t.encodeQuery("add_client_reset_exp_in "+strconv.Itoa(inputNumber)+" 1")),
+								tu.InlineKeyboardButton("2").WithCallbackData(t.encodeQuery("add_client_reset_exp_in "+strconv.Itoa(inputNumber)+" 2")),
+								tu.InlineKeyboardButton("3").WithCallbackData(t.encodeQuery("add_client_reset_exp_in "+strconv.Itoa(inputNumber)+" 3")),
+							),
+							tu.InlineKeyboardRow(
+								tu.InlineKeyboardButton("4").WithCallbackData(t.encodeQuery("add_client_reset_exp_in "+strconv.Itoa(inputNumber)+" 4")),
+								tu.InlineKeyboardButton("5").WithCallbackData(t.encodeQuery("add_client_reset_exp_in "+strconv.Itoa(inputNumber)+" 5")),
+								tu.InlineKeyboardButton("6").WithCallbackData(t.encodeQuery("add_client_reset_exp_in "+strconv.Itoa(inputNumber)+" 6")),
+							),
+							tu.InlineKeyboardRow(
+								tu.InlineKeyboardButton("7").WithCallbackData(t.encodeQuery("add_client_reset_exp_in "+strconv.Itoa(inputNumber)+" 7")),
+								tu.InlineKeyboardButton("8").WithCallbackData(t.encodeQuery("add_client_reset_exp_in "+strconv.Itoa(inputNumber)+" 8")),
+								tu.InlineKeyboardButton("9").WithCallbackData(t.encodeQuery("add_client_reset_exp_in "+strconv.Itoa(inputNumber)+" 9")),
+							),
+							tu.InlineKeyboardRow(
+								tu.InlineKeyboardButton("🔄").WithCallbackData(t.encodeQuery("add_client_reset_exp_in "+strconv.Itoa(inputNumber)+" -2")),
+								tu.InlineKeyboardButton("0").WithCallbackData(t.encodeQuery("add_client_reset_exp_in "+strconv.Itoa(inputNumber)+" 0")),
+								tu.InlineKeyboardButton("⬅️").WithCallbackData(t.encodeQuery("add_client_reset_exp_in "+strconv.Itoa(inputNumber)+" -1")),
+							),
+						)
 						t.editMessageCallbackTgBot(chatId, callbackQuery.Message.GetMessageID(), inlineKeyboard)
 						return
 					}
@@ -700,7 +827,16 @@ func (t *Tgbot) answerCallback(callbackQuery *telego.CallbackQuery, isAdmin bool
 						if len(dataArray) == 4 {
 							num, err := strconv.Atoi(dataArray[3])
 							if err == nil {
-								inputNumber = updateNumericInput(inputNumber, num)
+								switch num {
+								case -2:
+									inputNumber = 0
+								case -1:
+									if inputNumber > 0 {
+										inputNumber = (inputNumber / 10)
+									}
+								default:
+									inputNumber = (inputNumber * 10) + num
+								}
 							}
 							if inputNumber == oldInputNumber {
 								t.sendCallbackAnswerTgBot(callbackQuery.ID, t.I18nBot("tgbot.answers.successfulOperation"))
@@ -711,7 +847,34 @@ func (t *Tgbot) answerCallback(callbackQuery *telego.CallbackQuery, isAdmin bool
 								return
 							}
 						}
-						inlineKeyboard := t.numericKeypad(numericKeypadSpec{dataBase: "ip_limit", dataArgs: email + " ", cancelData: "client_cancel " + email, confirmLabelKey: "tgbot.buttons.confirmNumber"}, inputNumber)
+						inlineKeyboard := tu.InlineKeyboard(
+							tu.InlineKeyboardRow(
+								tu.InlineKeyboardButton(t.I18nBot("tgbot.buttons.cancel")).WithCallbackData(t.encodeQuery("client_cancel "+email)),
+							),
+							tu.InlineKeyboardRow(
+								tu.InlineKeyboardButton(t.I18nBot("tgbot.buttons.confirmNumber", "Num=="+strconv.Itoa(inputNumber))).WithCallbackData(t.encodeQuery("ip_limit_c "+email+" "+strconv.Itoa(inputNumber))),
+							),
+							tu.InlineKeyboardRow(
+								tu.InlineKeyboardButton("1").WithCallbackData(t.encodeQuery("ip_limit_in "+email+" "+strconv.Itoa(inputNumber)+" 1")),
+								tu.InlineKeyboardButton("2").WithCallbackData(t.encodeQuery("ip_limit_in "+email+" "+strconv.Itoa(inputNumber)+" 2")),
+								tu.InlineKeyboardButton("3").WithCallbackData(t.encodeQuery("ip_limit_in "+email+" "+strconv.Itoa(inputNumber)+" 3")),
+							),
+							tu.InlineKeyboardRow(
+								tu.InlineKeyboardButton("4").WithCallbackData(t.encodeQuery("ip_limit_in "+email+" "+strconv.Itoa(inputNumber)+" 4")),
+								tu.InlineKeyboardButton("5").WithCallbackData(t.encodeQuery("ip_limit_in "+email+" "+strconv.Itoa(inputNumber)+" 5")),
+								tu.InlineKeyboardButton("6").WithCallbackData(t.encodeQuery("ip_limit_in "+email+" "+strconv.Itoa(inputNumber)+" 6")),
+							),
+							tu.InlineKeyboardRow(
+								tu.InlineKeyboardButton("7").WithCallbackData(t.encodeQuery("ip_limit_in "+email+" "+strconv.Itoa(inputNumber)+" 7")),
+								tu.InlineKeyboardButton("8").WithCallbackData(t.encodeQuery("ip_limit_in "+email+" "+strconv.Itoa(inputNumber)+" 8")),
+								tu.InlineKeyboardButton("9").WithCallbackData(t.encodeQuery("ip_limit_in "+email+" "+strconv.Itoa(inputNumber)+" 9")),
+							),
+							tu.InlineKeyboardRow(
+								tu.InlineKeyboardButton("🔄").WithCallbackData(t.encodeQuery("ip_limit_in "+email+" "+strconv.Itoa(inputNumber)+" -2")),
+								tu.InlineKeyboardButton("0").WithCallbackData(t.encodeQuery("ip_limit_in "+email+" "+strconv.Itoa(inputNumber)+" 0")),
+								tu.InlineKeyboardButton("⬅️").WithCallbackData(t.encodeQuery("ip_limit_in "+email+" "+strconv.Itoa(inputNumber)+" -1")),
+							),
+						)
 						t.editMessageCallbackTgBot(chatId, callbackQuery.Message.GetMessageID(), inlineKeyboard)
 						return
 					}
@@ -721,13 +884,13 @@ func (t *Tgbot) answerCallback(callbackQuery *telego.CallbackQuery, isAdmin bool
 			case "add_client_ip_limit_c":
 				if len(dataArray) == 2 {
 					count, _ := strconv.Atoi(dataArray[1])
-					draft.limitIP = count
+					client_LimitIP = count
 				}
 
 				messageId := callbackQuery.Message.GetMessageID()
-				message_text := t.BuildClientDraftMessage(draft)
+				message_text := t.BuildClientDraftMessage()
 
-				t.addClient(callbackQuery.Message.GetChat().ID, draft, message_text, messageId)
+				t.addClient(callbackQuery.Message.GetChat().ID, message_text, messageId)
 				t.sendCallbackAnswerTgBot(callbackQuery.ID, t.I18nBot("tgbot.answers.successfulOperation"))
 			case "add_client_ip_limit_in":
 				if len(dataArray) >= 2 {
@@ -737,7 +900,16 @@ func (t *Tgbot) answerCallback(callbackQuery *telego.CallbackQuery, isAdmin bool
 						if len(dataArray) == 3 {
 							num, err := strconv.Atoi(dataArray[2])
 							if err == nil {
-								inputNumber = updateNumericInput(inputNumber, num)
+								switch num {
+								case -2:
+									inputNumber = 0
+								case -1:
+									if inputNumber > 0 {
+										inputNumber = (inputNumber / 10)
+									}
+								default:
+									inputNumber = (inputNumber * 10) + num
+								}
 							}
 							if inputNumber == oldInputNumber {
 								t.sendCallbackAnswerTgBot(callbackQuery.ID, t.I18nBot("tgbot.answers.successfulOperation"))
@@ -748,7 +920,34 @@ func (t *Tgbot) answerCallback(callbackQuery *telego.CallbackQuery, isAdmin bool
 								return
 							}
 						}
-						inlineKeyboard := t.numericKeypad(numericKeypadSpec{dataBase: "add_client_ip_limit", cancelData: "add_client_default_ip_limit", confirmLabelKey: "tgbot.buttons.confirmNumber"}, inputNumber)
+						inlineKeyboard := tu.InlineKeyboard(
+							tu.InlineKeyboardRow(
+								tu.InlineKeyboardButton(t.I18nBot("tgbot.buttons.cancel")).WithCallbackData(t.encodeQuery("add_client_default_ip_limit")),
+							),
+							tu.InlineKeyboardRow(
+								tu.InlineKeyboardButton(t.I18nBot("tgbot.buttons.confirmNumber", "Num=="+strconv.Itoa(inputNumber))).WithCallbackData(t.encodeQuery("add_client_ip_limit_c "+strconv.Itoa(inputNumber))),
+							),
+							tu.InlineKeyboardRow(
+								tu.InlineKeyboardButton("1").WithCallbackData(t.encodeQuery("add_client_ip_limit_in "+strconv.Itoa(inputNumber)+" 1")),
+								tu.InlineKeyboardButton("2").WithCallbackData(t.encodeQuery("add_client_ip_limit_in "+strconv.Itoa(inputNumber)+" 2")),
+								tu.InlineKeyboardButton("3").WithCallbackData(t.encodeQuery("add_client_ip_limit_in "+strconv.Itoa(inputNumber)+" 3")),
+							),
+							tu.InlineKeyboardRow(
+								tu.InlineKeyboardButton("4").WithCallbackData(t.encodeQuery("add_client_ip_limit_in "+strconv.Itoa(inputNumber)+" 4")),
+								tu.InlineKeyboardButton("5").WithCallbackData(t.encodeQuery("add_client_ip_limit_in "+strconv.Itoa(inputNumber)+" 5")),
+								tu.InlineKeyboardButton("6").WithCallbackData(t.encodeQuery("add_client_ip_limit_in "+strconv.Itoa(inputNumber)+" 6")),
+							),
+							tu.InlineKeyboardRow(
+								tu.InlineKeyboardButton("7").WithCallbackData(t.encodeQuery("add_client_ip_limit_in "+strconv.Itoa(inputNumber)+" 7")),
+								tu.InlineKeyboardButton("8").WithCallbackData(t.encodeQuery("add_client_ip_limit_in "+strconv.Itoa(inputNumber)+" 8")),
+								tu.InlineKeyboardButton("9").WithCallbackData(t.encodeQuery("add_client_ip_limit_in "+strconv.Itoa(inputNumber)+" 9")),
+							),
+							tu.InlineKeyboardRow(
+								tu.InlineKeyboardButton("🔄").WithCallbackData(t.encodeQuery("add_client_ip_limit_in "+strconv.Itoa(inputNumber)+" -2")),
+								tu.InlineKeyboardButton("0").WithCallbackData(t.encodeQuery("add_client_ip_limit_in "+strconv.Itoa(inputNumber)+" 0")),
+								tu.InlineKeyboardButton("⬅️").WithCallbackData(t.encodeQuery("add_client_ip_limit_in "+strconv.Itoa(inputNumber)+" -1")),
+							),
+						)
 						t.editMessageCallbackTgBot(chatId, callbackQuery.Message.GetMessageID(), inlineKeyboard)
 						return
 					}
@@ -847,15 +1046,15 @@ func (t *Tgbot) answerCallback(callbackQuery *telego.CallbackQuery, isAdmin bool
 				}
 				t.SendMsgToTgbot(chatId, t.I18nBot("tgbot.answers.chooseClient", "Inbound=="+inbound.Remark), clients)
 			case "add_client_to":
-				draft.email = t.randomLowerAndNum(8)
-				draft.limitIP = 0
-				draft.totalGB = 0
-				draft.expiryTime = 0
-				draft.enable = true
-				draft.tgID = ""
-				draft.subID = t.randomLowerAndNum(16)
-				draft.comment = ""
-				draft.reset = 0
+				client_Email = t.randomLowerAndNum(8)
+				client_LimitIP = 0
+				client_TotalGB = 0
+				client_ExpiryTime = 0
+				client_Enable = true
+				client_TgID = ""
+				client_SubID = t.randomLowerAndNum(16)
+				client_Comment = ""
+				client_Reset = 0
 
 				inboundId := dataArray[1]
 				inboundIdInt, err := strconv.Atoi(inboundId)
@@ -863,9 +1062,9 @@ func (t *Tgbot) answerCallback(callbackQuery *telego.CallbackQuery, isAdmin bool
 					t.sendCallbackAnswerTgBot(callbackQuery.ID, err.Error())
 					return
 				}
-				draft.receiverInboundID = inboundIdInt
-				draft.receiverInboundIDs = []int{inboundIdInt}
-				t.addClient(callbackQuery.Message.GetChat().ID, draft, t.BuildClientDraftMessage(draft))
+				receiver_inbound_ID = inboundIdInt
+				receiver_inbound_IDs = []int{inboundIdInt}
+				t.addClient(callbackQuery.Message.GetChat().ID, t.BuildClientDraftMessage())
 			case "add_client_toggle_attach":
 				inboundIdStr := dataArray[1]
 				inboundIdInt, err := strconv.Atoi(inboundIdStr)
@@ -874,27 +1073,23 @@ func (t *Tgbot) answerCallback(callbackQuery *telego.CallbackQuery, isAdmin bool
 					return
 				}
 				found := -1
-				for i, id := range draft.receiverInboundIDs {
+				for i, id := range receiver_inbound_IDs {
 					if id == inboundIdInt {
 						found = i
 						break
 					}
 				}
 				if found >= 0 {
-					draft.receiverInboundIDs = append(draft.receiverInboundIDs[:found], draft.receiverInboundIDs[found+1:]...)
+					receiver_inbound_IDs = append(receiver_inbound_IDs[:found], receiver_inbound_IDs[found+1:]...)
 				} else {
-					draft.receiverInboundIDs = append(draft.receiverInboundIDs, inboundIdInt)
+					receiver_inbound_IDs = append(receiver_inbound_IDs, inboundIdInt)
 				}
-				picker, err := t.getInboundsAttachPicker(draft)
+				picker, err := t.getInboundsAttachPicker()
 				if err != nil {
 					t.sendCallbackAnswerTgBot(callbackQuery.ID, err.Error())
 					return
 				}
 				t.editMessageCallbackTgBot(callbackQuery.Message.GetChat().ID, callbackQuery.Message.GetMessageID(), picker)
-			default:
-				// An unknown action with arguments is still a tap, and an
-				// unanswered tap spins until Telegram times it out.
-				t.sendCallbackAnswerTgBot(callbackQuery.ID, t.I18nBot("tgbot.answers.errorOperation"))
 			}
 			return
 		} else {
@@ -933,17 +1128,6 @@ func (t *Tgbot) answerCallback(callbackQuery *telego.CallbackQuery, isAdmin bool
 		}
 	}
 
-	if !isAdmin {
-		// encodeQuery hashes any payload past 64 chars, so a long email's button
-		// must be decoded before the gate can see which client it names.
-		if decoded, err := t.decodeQuery(callbackQuery.Data); err == nil {
-			callbackQuery.Data = decoded
-		}
-		if !isClientSelfCallback(callbackQuery.Data) {
-			return
-		}
-	}
-
 	switch callbackQuery.Data {
 	case "get_usage":
 		t.sendCallbackAnswerTgBot(callbackQuery.ID, t.I18nBot("tgbot.buttons.serverUsage"))
@@ -960,9 +1144,6 @@ func (t *Tgbot) answerCallback(callbackQuery *telego.CallbackQuery, isAdmin bool
 	case "get_backup":
 		t.sendCallbackAnswerTgBot(callbackQuery.ID, t.I18nBot("tgbot.buttons.dbBackup"))
 		t.sendBackup(chatId)
-	case "get_banlogs":
-		t.sendCallbackAnswerTgBot(callbackQuery.ID, t.I18nBot("tgbot.buttons.getBanLogs"))
-		t.sendBanLogs(chatId, true)
 	case "client_traffic":
 		tgUserID := callbackQuery.From.ID
 		t.sendCallbackAnswerTgBot(callbackQuery.ID, t.I18nBot("tgbot.buttons.clientUsage"))
@@ -1047,15 +1228,15 @@ func (t *Tgbot) answerCallback(callbackQuery *telego.CallbackQuery, isAdmin bool
 		t.sendCallbackAnswerTgBot(callbackQuery.ID, t.I18nBot("tgbot.buttons.commands"))
 		t.SendMsgToTgbot(chatId, t.I18nBot("tgbot.commands.helpAdminCommands"))
 	case "add_client":
-		draft.email = t.randomLowerAndNum(8)
-		draft.limitIP = 0
-		draft.totalGB = 0
-		draft.expiryTime = 0
-		draft.enable = true
-		draft.tgID = ""
-		draft.subID = t.randomLowerAndNum(16)
-		draft.comment = ""
-		draft.reset = 0
+		client_Email = t.randomLowerAndNum(8)
+		client_LimitIP = 0
+		client_TotalGB = 0
+		client_ExpiryTime = 0
+		client_Enable = true
+		client_TgID = ""
+		client_SubID = t.randomLowerAndNum(16)
+		client_Comment = ""
+		client_Reset = 0
 
 		inbounds, err := t.getInboundsAddClient()
 		if err != nil {
@@ -1072,7 +1253,7 @@ func (t *Tgbot) answerCallback(callbackQuery *telego.CallbackQuery, isAdmin bool
 				tu.InlineKeyboardButton(t.I18nBot("tgbot.buttons.use_default")).WithCallbackData("add_client_default_info"),
 			),
 		)
-		prompt_message := t.I18nBot("tgbot.messages.email_prompt", "ClientEmail=="+html.EscapeString(draft.email))
+		prompt_message := t.I18nBot("tgbot.messages.email_prompt", "ClientEmail=="+client_Email)
 		t.SendMsgToTgbot(chatId, prompt_message, cancel_btn_markup)
 	case "add_client_ch_default_comment":
 		t.deleteMessageTgBot(chatId, callbackQuery.Message.GetMessageID())
@@ -1082,7 +1263,7 @@ func (t *Tgbot) answerCallback(callbackQuery *telego.CallbackQuery, isAdmin bool
 				tu.InlineKeyboardButton(t.I18nBot("tgbot.buttons.use_default")).WithCallbackData("add_client_default_info"),
 			),
 		)
-		prompt_message := t.I18nBot("tgbot.messages.comment_prompt", "ClientComment=="+html.EscapeString(draft.comment))
+		prompt_message := t.I18nBot("tgbot.messages.comment_prompt", "ClientComment=="+client_Comment)
 		t.SendMsgToTgbot(chatId, prompt_message, cancel_btn_markup)
 	case "add_client_ch_default_tg_id":
 		t.deleteMessageTgBot(chatId, callbackQuery.Message.GetMessageID())
@@ -1092,11 +1273,11 @@ func (t *Tgbot) answerCallback(callbackQuery *telego.CallbackQuery, isAdmin bool
 				tu.InlineKeyboardButton(t.I18nBot("tgbot.buttons.use_default")).WithCallbackData("add_client_default_info"),
 			),
 		)
-		current := draft.tgID
+		current := client_TgID
 		if current == "" {
 			current = "—"
 		}
-		t.SendMsgToTgbot(chatId, fmt.Sprintf("Send the Telegram user id (numeric) to attach to this client, or send <code>-</code> / <code>none</code> to clear.\nCurrent: <code>%s</code>", html.EscapeString(current)), cancel_btn_markup)
+		t.SendMsgToTgbot(chatId, fmt.Sprintf("Send the Telegram user id (numeric) to attach to this client, or send `-` / `none` to clear.\nCurrent: `%s`", current), cancel_btn_markup)
 	case "add_client_ch_default_traffic":
 		inlineKeyboard := tu.InlineKeyboard(
 			tu.InlineKeyboardRow(
@@ -1137,23 +1318,21 @@ func (t *Tgbot) answerCallback(callbackQuery *telego.CallbackQuery, isAdmin bool
 				tu.InlineKeyboardButton(t.I18nBot("tgbot.unlimited")).WithCallbackData(t.encodeQuery("add_client_reset_exp_c 0")),
 				tu.InlineKeyboardButton(t.I18nBot("tgbot.buttons.custom")).WithCallbackData(t.encodeQuery("add_client_reset_exp_in 0")),
 			),
-			// No "Add" verb: these replace the term the draft carries, unlike the
-			// renewal keyboard, whose reset_exp_c handler really does add to it.
 			tu.InlineKeyboardRow(
-				tu.InlineKeyboardButton("7 "+t.I18nBot("tgbot.days")).WithCallbackData(t.encodeQuery("add_client_reset_exp_c 7")),
-				tu.InlineKeyboardButton("10 "+t.I18nBot("tgbot.days")).WithCallbackData(t.encodeQuery("add_client_reset_exp_c 10")),
+				tu.InlineKeyboardButton(t.I18nBot("tgbot.add")+" 7 "+t.I18nBot("tgbot.days")).WithCallbackData(t.encodeQuery("add_client_reset_exp_c 7")),
+				tu.InlineKeyboardButton(t.I18nBot("tgbot.add")+" 10 "+t.I18nBot("tgbot.days")).WithCallbackData(t.encodeQuery("add_client_reset_exp_c 10")),
 			),
 			tu.InlineKeyboardRow(
-				tu.InlineKeyboardButton("14 "+t.I18nBot("tgbot.days")).WithCallbackData(t.encodeQuery("add_client_reset_exp_c 14")),
-				tu.InlineKeyboardButton("20 "+t.I18nBot("tgbot.days")).WithCallbackData(t.encodeQuery("add_client_reset_exp_c 20")),
+				tu.InlineKeyboardButton(t.I18nBot("tgbot.add")+" 14 "+t.I18nBot("tgbot.days")).WithCallbackData(t.encodeQuery("add_client_reset_exp_c 14")),
+				tu.InlineKeyboardButton(t.I18nBot("tgbot.add")+" 20 "+t.I18nBot("tgbot.days")).WithCallbackData(t.encodeQuery("add_client_reset_exp_c 20")),
 			),
 			tu.InlineKeyboardRow(
-				tu.InlineKeyboardButton("1 "+t.I18nBot("tgbot.month")).WithCallbackData(t.encodeQuery("add_client_reset_exp_c 30")),
-				tu.InlineKeyboardButton("3 "+t.I18nBot("tgbot.months")).WithCallbackData(t.encodeQuery("add_client_reset_exp_c 90")),
+				tu.InlineKeyboardButton(t.I18nBot("tgbot.add")+" 1 "+t.I18nBot("tgbot.month")).WithCallbackData(t.encodeQuery("add_client_reset_exp_c 30")),
+				tu.InlineKeyboardButton(t.I18nBot("tgbot.add")+" 3 "+t.I18nBot("tgbot.months")).WithCallbackData(t.encodeQuery("add_client_reset_exp_c 90")),
 			),
 			tu.InlineKeyboardRow(
-				tu.InlineKeyboardButton("6 "+t.I18nBot("tgbot.months")).WithCallbackData(t.encodeQuery("add_client_reset_exp_c 180")),
-				tu.InlineKeyboardButton("12 "+t.I18nBot("tgbot.months")).WithCallbackData(t.encodeQuery("add_client_reset_exp_c 365")),
+				tu.InlineKeyboardButton(t.I18nBot("tgbot.add")+" 6 "+t.I18nBot("tgbot.months")).WithCallbackData(t.encodeQuery("add_client_reset_exp_c 180")),
+				tu.InlineKeyboardButton(t.I18nBot("tgbot.add")+" 12 "+t.I18nBot("tgbot.months")).WithCallbackData(t.encodeQuery("add_client_reset_exp_c 365")),
 			),
 		)
 		t.editMessageCallbackTgBot(chatId, callbackQuery.Message.GetMessageID(), inlineKeyboard)
@@ -1190,65 +1369,68 @@ func (t *Tgbot) answerCallback(callbackQuery *telego.CallbackQuery, isAdmin bool
 		t.deleteMessageTgBot(chatId, callbackQuery.Message.GetMessageID())
 		t.SendMsgToTgbotDeleteAfter(chatId, t.I18nBot("tgbot.messages.using_default_value"), 3, tu.ReplyKeyboardRemove())
 		userStateMgr.clear(chatId)
-		t.addClient(chatId, draft, t.BuildClientDraftMessage(draft))
+		t.addClient(chatId, t.BuildClientDraftMessage())
 	case "add_client_cancel":
 		userStateMgr.clear(chatId)
-		addClientDrafts.reset(chatId)
+		receiver_inbound_ID = 0
+		receiver_inbound_IDs = nil
 		t.deleteMessageTgBot(chatId, callbackQuery.Message.GetMessageID())
 		t.SendMsgToTgbotDeleteAfter(chatId, t.I18nBot("tgbot.messages.cancel"), 3, tu.ReplyKeyboardRemove())
 	case "add_client_default_traffic_exp":
 		messageId := callbackQuery.Message.GetMessageID()
-		message_text := t.BuildClientDraftMessage(draft)
-		t.addClient(chatId, draft, message_text, messageId)
-		t.sendCallbackAnswerTgBot(callbackQuery.ID, t.I18nBot("tgbot.answers.canceled", "Email=="+draft.email))
+		message_text := t.BuildClientDraftMessage()
+		t.addClient(chatId, message_text, messageId)
+		t.sendCallbackAnswerTgBot(callbackQuery.ID, t.I18nBot("tgbot.answers.canceled", "Email=="+client_Email))
 	case "add_client_default_ip_limit":
 		messageId := callbackQuery.Message.GetMessageID()
-		message_text := t.BuildClientDraftMessage(draft)
-		t.addClient(chatId, draft, message_text, messageId)
-		t.sendCallbackAnswerTgBot(callbackQuery.ID, t.I18nBot("tgbot.answers.canceled", "Email=="+draft.email))
+		message_text := t.BuildClientDraftMessage()
+		t.addClient(chatId, message_text, messageId)
+		t.sendCallbackAnswerTgBot(callbackQuery.ID, t.I18nBot("tgbot.answers.canceled", "Email=="+client_Email))
 	case "add_client_attach_more":
-		picker, err := t.getInboundsAttachPicker(draft)
+		picker, err := t.getInboundsAttachPicker()
 		if err != nil {
 			t.sendCallbackAnswerTgBot(callbackQuery.ID, err.Error())
 			return
 		}
 		t.SendMsgToTgbot(chatId, "Pick inbound(s) to attach:", picker)
 	case "add_client_attach_done":
-		if draft.receiverInboundID == 0 && len(draft.receiverInboundIDs) > 0 {
-			draft.receiverInboundID = draft.receiverInboundIDs[0]
+		if receiver_inbound_ID == 0 && len(receiver_inbound_IDs) > 0 {
+			receiver_inbound_ID = receiver_inbound_IDs[0]
 		}
-		if draft.receiverInboundID == 0 {
+		if receiver_inbound_ID == 0 {
 			t.sendCallbackAnswerTgBot(callbackQuery.ID, t.I18nBot("tgbot.answers.getInboundsFailed"))
 			return
 		}
-		message_text := t.BuildClientDraftMessage(draft)
+		message_text := t.BuildClientDraftMessage()
 		t.deleteMessageTgBot(chatId, callbackQuery.Message.GetMessageID())
-		t.addClient(chatId, draft, message_text)
+		t.addClient(chatId, message_text)
 	case "add_client_submit_disable":
-		draft.enable = false
-		_, err := t.SubmitAddClient(draft)
+		client_Enable = false
+		_, err := t.SubmitAddClient()
 		if err != nil {
 			errorMessage := fmt.Sprintf("%v", err)
 			t.SendMsgToTgbot(chatId, t.I18nBot("tgbot.messages.error_add_client", "error=="+errorMessage), tu.ReplyKeyboardRemove())
 		} else {
 			t.deleteMessageTgBot(chatId, callbackQuery.Message.GetMessageID())
 			t.SendMsgToTgbot(chatId, t.I18nBot("tgbot.answers.successfulOperation"), tu.ReplyKeyboardRemove())
-			t.sendClientIndividualLinks(chatId, draft.email)
-			t.sendClientQRLinks(chatId, draft.email)
-			addClientDrafts.reset(chatId)
+			t.sendClientIndividualLinks(chatId, client_Email)
+			t.sendClientQRLinks(chatId, client_Email)
+			receiver_inbound_ID = 0
+			receiver_inbound_IDs = nil
 		}
 	case "add_client_submit_enable":
-		draft.enable = true
-		_, err := t.SubmitAddClient(draft)
+		client_Enable = true
+		_, err := t.SubmitAddClient()
 		if err != nil {
 			errorMessage := fmt.Sprintf("%v", err)
 			t.SendMsgToTgbot(chatId, t.I18nBot("tgbot.messages.error_add_client", "error=="+errorMessage), tu.ReplyKeyboardRemove())
 		} else {
 			t.deleteMessageTgBot(chatId, callbackQuery.Message.GetMessageID())
 			t.SendMsgToTgbot(chatId, t.I18nBot("tgbot.answers.successfulOperation"), tu.ReplyKeyboardRemove())
-			t.sendClientIndividualLinks(chatId, draft.email)
-			t.sendClientQRLinks(chatId, draft.email)
-			addClientDrafts.reset(chatId)
+			t.sendClientIndividualLinks(chatId, client_Email)
+			t.sendClientQRLinks(chatId, client_Email)
+			receiver_inbound_ID = 0
+			receiver_inbound_IDs = nil
 		}
 	case "reset_all_traffics_cancel":
 		t.deleteMessageTgBot(chatId, callbackQuery.Message.GetMessageID())
@@ -1271,22 +1453,18 @@ func (t *Tgbot) answerCallback(callbackQuery *telego.CallbackQuery, isAdmin bool
 			return
 		}
 
-		// One report per tap, not one message per client: a large panel would
-		// otherwise burst past Telegram's rate limit. SendMsgToTgbot pages it.
-		var report strings.Builder
 		for _, email := range emails {
-			if err := t.inboundService.ResetClientTrafficByEmail(email); err == nil {
-				report.WriteString(t.I18nBot("tgbot.messages.SuccessResetTraffic", "ClientEmail=="+email))
+			err := t.inboundService.ResetClientTrafficByEmail(email)
+			if err == nil {
+				msg := t.I18nBot("tgbot.messages.SuccessResetTraffic", "ClientEmail=="+email)
+				t.SendMsgToTgbot(chatId, msg, tu.ReplyKeyboardRemove())
 			} else {
-				report.WriteString(t.I18nBot("tgbot.messages.FailedResetTraffic", "ClientEmail=="+email, "ErrorMessage=="+err.Error()))
+				msg := t.I18nBot("tgbot.messages.FailedResetTraffic", "ClientEmail=="+email, "ErrorMessage=="+err.Error())
+				t.SendMsgToTgbot(chatId, msg, tu.ReplyKeyboardRemove())
 			}
-			report.WriteString("\r\n\r\n")
 		}
-		report.WriteString(t.I18nBot("tgbot.messages.FinishProcess"))
 
-		// Escaped whole: one stray "<" in a remark or email otherwise makes
-		// Telegram reject the page it landed on, losing ~15 clients at once.
-		t.SendMsgToTgbot(chatId, html.EscapeString(report.String()), tu.ReplyKeyboardRemove())
+		t.SendMsgToTgbot(chatId, t.I18nBot("tgbot.messages.FinishProcess"), tu.ReplyKeyboardRemove())
 	case "get_sorted_traffic_usage_report":
 		t.deleteMessageTgBot(chatId, callbackQuery.Message.GetMessageID())
 		emails, err := t.inboundService.GetAllEmails()
@@ -1294,86 +1472,54 @@ func (t *Tgbot) answerCallback(callbackQuery *telego.CallbackQuery, isAdmin bool
 			t.SendMsgToTgbot(chatId, t.I18nBot("tgbot.answers.errorOperation"), tu.ReplyKeyboardRemove())
 			return
 		}
-		validEmails, missingEmails, err := t.inboundService.FilterAndSortClientEmails(emails)
+		valid_emails, extra_emails, err := t.inboundService.FilterAndSortClientEmails(emails)
 		if err != nil {
 			t.SendMsgToTgbot(chatId, t.I18nBot("tgbot.answers.errorOperation"), tu.ReplyKeyboardRemove())
 			return
 		}
 
-		// Batched for the same reason as the reset report above: one message
-		// per client hits Telegram's rate limit on a large panel.
-		var report strings.Builder
-		for _, email := range validEmails {
-			traffic, err := t.inboundService.GetClientTrafficByEmail(email)
+		for _, valid_emails := range valid_emails {
+			traffic, err := t.inboundService.GetClientTrafficByEmail(valid_emails)
 			if err != nil {
 				logger.Warning(err)
-				report.WriteString(t.I18nBot("tgbot.wentWrong"))
-				report.WriteString("\r\n\r\n")
+				msg := t.I18nBot("tgbot.wentWrong")
+				t.SendMsgToTgbot(chatId, msg)
 				continue
 			}
 			if traffic == nil {
-				report.WriteString(t.I18nBot("tgbot.noResult"))
-				report.WriteString("\r\n\r\n")
+				msg := t.I18nBot("tgbot.noResult")
+				t.SendMsgToTgbot(chatId, msg)
 				continue
 			}
-			report.WriteString(t.clientInfoMsg(traffic, false, false, false, false, true, false))
-			report.WriteString("\r\n\r\n")
+
+			output := t.clientInfoMsg(traffic, false, false, false, false, true, false)
+			t.SendMsgToTgbot(chatId, output, tu.ReplyKeyboardRemove())
 		}
-		for _, email := range missingEmails {
-			fmt.Fprintf(&report, "📧 %s\r\n%s\r\n\r\n", email, t.I18nBot("tgbot.noResult"))
-		}
-		if report.Len() > 0 {
-			t.SendMsgToTgbot(chatId, html.EscapeString(report.String()), tu.ReplyKeyboardRemove())
+		for _, extra_emails := range extra_emails {
+			msg := fmt.Sprintf("📧 %s\n%s", extra_emails, t.I18nBot("tgbot.noResult"))
+			t.SendMsgToTgbot(chatId, msg, tu.ReplyKeyboardRemove())
+
 		}
 	default:
-		action, email, ok := splitClientLinkCallback(callbackQuery.Data)
-		if !ok {
-			// Nothing matched: an unknown button still has to be answered, or it
-			// keeps spinning until Telegram times the callback out.
-			t.sendCallbackAnswerTgBot(callbackQuery.ID, t.I18nBot("tgbot.answers.errorOperation"))
-			return
-		}
-		// The keyboard outlives the chat it was sent to, so the email in it
-		// cannot authorise itself: a non-admin only reaches their own clients.
-		if !isAdmin && !t.clientOwnedByTgUser(callbackQuery.From.ID, email) {
-			t.sendCallbackAnswerTgBot(callbackQuery.ID, t.I18nBot("tgbot.answers.errorOperation"))
-			return
-		}
-		switch action {
-		case "client_sub_links":
+		if after, ok := strings.CutPrefix(callbackQuery.Data, "client_sub_links "); ok {
+			email := after
 			t.sendClientSubLinks(chatId, email)
-		case "client_individual_links":
+			return
+		}
+		if after, ok := strings.CutPrefix(callbackQuery.Data, "client_individual_links "); ok {
+			email := after
 			t.sendClientIndividualLinks(chatId, email)
-		case "client_qr_links":
+			return
+		}
+		if after, ok := strings.CutPrefix(callbackQuery.Data, "client_qr_links "); ok {
+			email := after
 			t.sendClientQRLinks(chatId, email)
+			return
 		}
 	}
 }
 
 // checkAdmin checks if the given Telegram ID is an admin.
 func checkAdmin(tgId int64) bool {
-	return slices.Contains(adminSnapshot(), tgId)
-}
-
-// isClientSelfCallback reports whether a callback is per-user rather than
-// admin-only; the caller still has to prove the client is its own.
-func isClientSelfCallback(data string) bool {
-	switch data {
-	case "client_traffic", "client_commands", "client_sub_links",
-		"client_individual_links", "client_qr_links":
-		return true
-	}
-	_, _, ok := splitClientLinkCallback(data)
-	return ok
-}
-
-// splitClientLinkCallback splits "<action> <email>" for the per-client link
-// callbacks; ok is false for every other data.
-func splitClientLinkCallback(data string) (action, email string, ok bool) {
-	for _, candidate := range []string{"client_sub_links", "client_individual_links", "client_qr_links"} {
-		if rest, found := strings.CutPrefix(data, candidate+" "); found && rest != "" {
-			return candidate, rest, true
-		}
-	}
-	return "", "", false
+	return slices.Contains(adminIds, tgId)
 }

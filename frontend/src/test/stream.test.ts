@@ -3,10 +3,10 @@ import { describe, expect, it } from 'vitest';
 
 import { NetworkSettingsSchema } from '@/schemas/protocols';
 
-const streamFixtures = import.meta.glob<unknown>('./golden/fixtures/stream/*.json', {
-  eager: true,
-  import: 'default',
-});
+const streamFixtures = import.meta.glob<unknown>(
+  './golden/fixtures/stream/*.json',
+  { eager: true, import: 'default' },
+);
 
 function fixtureName(path: string): string {
   const file = path.split('/').pop() ?? path;
@@ -15,10 +15,7 @@ function fixtureName(path: string): string {
 
 describe('NetworkSettingsSchema fixtures', () => {
   const entries = Object.entries(streamFixtures).sort(([a], [b]) => a.localeCompare(b));
-  expect(
-    entries.length,
-    'expected at least one fixture under golden/fixtures/stream',
-  ).toBeGreaterThan(0);
+  expect(entries.length, 'expected at least one fixture under golden/fixtures/stream').toBeGreaterThan(0);
 
   for (const [path, raw] of entries) {
     it(`parses ${fixtureName(path)} byte-stably`, () => {
@@ -36,11 +33,7 @@ describe('NetworkSettingsSchema method alias', () => {
   });
 
   it('prefers method over network when both are present', () => {
-    const parsed = NetworkSettingsSchema.parse({
-      method: 'grpc',
-      network: 'tcp',
-      grpcSettings: {},
-    });
+    const parsed = NetworkSettingsSchema.parse({ method: 'grpc', network: 'tcp', grpcSettings: {} });
     expect((parsed as { network?: string }).network).toBe('grpc');
   });
 });

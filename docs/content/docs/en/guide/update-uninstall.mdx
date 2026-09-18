@@ -1,6 +1,6 @@
 ---
 title: Update & Uninstall
-description: Manage 3x-ui with the x-ui menu and CLI — update (stable, dev, or legacy), change settings, and uninstall cleanly.
+description: Manage Heimdall with the x-ui menu and CLI — update stable or dev builds, change settings, and uninstall cleanly.
 icon: RefreshCw
 ---
 
@@ -13,7 +13,7 @@ x-ui
 
 ## The `x-ui` management menu
 
-The menu (items `0`–`28`) shows the panel/Xray status at the top, then:
+The menu (items `0`–`27`) shows the panel/Xray status at the top, then:
 
 | #     | Item                                   | What it does                                              |
 | ----- | -------------------------------------- | --------------------------------------------------------- |
@@ -21,8 +21,8 @@ The menu (items `0`–`28`) shows the panel/Xray status at the top, then:
 | 2     | Update                                 | Update to the latest **stable** release                   |
 | 3     | Update to Dev Channel (latest commit)  | Update to the rolling `dev-latest` build                  |
 | 4     | Update Menu                            | Update just the `x-ui` menu script                        |
-| 5     | Legacy Version                         | Install a specific older version (prompts for a tag)      |
-| 6     | Uninstall                              | Remove 3x-ui (see below)                                  |
+| 5     | Legacy Version (Disabled)              | Upstream legacy installation is disabled in Heimdall     |
+| 6     | Uninstall                              | Remove Heimdall (see below)                                  |
 | 7     | Reset Username & Password              | Set new credentials; optionally disable 2FA               |
 | 8     | Reset Web Base Path                    | Randomize the web base path                               |
 | 9     | Reset Settings                         | Reset panel settings (your account is preserved)          |
@@ -35,13 +35,12 @@ The menu (items `0`–`28`) shows the panel/Xray status at the top, then:
 | 18–19 | Enable / Disable Autostart             | Toggle start-on-boot                                      |
 | 20    | SSL Certificate Management             | Let's Encrypt (domain or IP), custom paths, renew/revoke  |
 | 21    | Cloudflare SSL Certificate             | DNS-01 wildcard cert via Cloudflare                       |
-| 22    | IP Limit Management                    | Fail2ban-based per-client IP limits                       |
-| 23    | Firewall Management                    | `ufw` install and port rules                              |
-| 24    | SSH Port Forwarding Management         | Bind the panel to localhost and tunnel over SSH           |
-| 25    | PostgreSQL Management                  | Install/migrate/manage PostgreSQL                         |
-| 26    | Enable BBR                             | Toggle the BBR congestion-control sysctl                  |
-| 27    | Update Geo Files                       | Update geoip/geosite data (Loyalsoldier, IR, RU)          |
-| 28    | Speedtest by Ookla                     | Run an Ookla speed test                                   |
+| 22    | Firewall Management                    | `ufw` install and port rules                              |
+| 23    | SSH Port Forwarding Management         | Bind the panel to localhost and tunnel over SSH           |
+| 24    | PostgreSQL Management                  | Install/migrate/manage PostgreSQL                         |
+| 25    | Enable BBR                             | Toggle the BBR congestion-control sysctl                  |
+| 26    | Update Geo Files                       | Update geoip/geosite data (Loyalsoldier, IR, RU)          |
+| 27    | Speedtest by Ookla                     | Run an Ookla speed test                                   |
 | 0     | Exit                                   | —                                                         |
 
 Some of these have their own pages: [SSL certificates](/docs/config/ssl-certificates)
@@ -61,12 +60,12 @@ For scripts and quick actions, `x-ui` also takes a subcommand directly:
 | `x-ui settings`            | Show current settings                               |
 | `x-ui enable` / `disable`  | Toggle autostart on boot                            |
 | `x-ui log`                 | Tail the debug log                                  |
-| `x-ui banlog`              | Show Fail2ban ban log                               |
 | `x-ui update`              | Update to the latest stable release                 |
 | `x-ui update-dev`          | Update to the rolling `dev-latest` build            |
-| `x-ui legacy`              | Install a specific older version (prompts)          |
+| `x-ui legacy`              | Return an error; upstream legacy installation is disabled |
 | `x-ui update-all-geofiles` | Update all geo files, restart if changed            |
 | `x-ui migrate-db --dsn …`  | Migrate SQLite → PostgreSQL (see [Database](/docs/reference/database)) |
+| `x-ui pgclient [ver]`      | Install or upgrade PostgreSQL client tools                |
 | `x-ui install` / `uninstall` | Install / uninstall                               |
 
 ## Updating
@@ -75,7 +74,7 @@ For scripts and quick actions, `x-ui` also takes a subcommand directly:
   also updates in place.
 - **Dev channel:** menu option **3** or `x-ui update-dev` — the rolling
   `dev-latest` per-commit build (not a stable release).
-- **A specific older version:** menu option **5** (Legacy Version).
+- **Legacy upstream versions:** disabled in Heimdall; use the stable or dev channel instead.
 
 Updating preserves your database and settings. Take a
 [backup](/docs/operations/backup-restore) before a major-version jump.

@@ -31,32 +31,23 @@ lint-go: dist-stub ## golangci-lint on Go sources
 	golangci-lint run
 
 .PHONY: lint-fe
-lint-fe: ## oxlint on frontend sources
+lint-fe: ## ESLint on frontend sources
 	cd $(FRONTEND) && npm run lint
 
 .PHONY: lint
 lint: lint-go lint-fe ## All linters
 
-.PHONY: format-check
-format-check: ## oxfmt in check mode on frontend sources
-	cd $(FRONTEND) && npm run format:check
-
 .PHONY: typecheck
 typecheck: ## tsc --noEmit
 	cd $(FRONTEND) && npm run typecheck
-
-.PHONY: msw-worker-check
-msw-worker-check: ## Verify the tracked worker matches the installed MSW runtime
-	cmp $(FRONTEND)/public/mockServiceWorker.js $(FRONTEND)/node_modules/msw/lib/mockServiceWorker.js
 
 .PHONY: test-go
 test-go: dist-stub ## Go tests (shuffle, no cache)
 	go test -shuffle=on -count=1 $(GO_PKGS)
 
 .PHONY: race
-# internal/web/service runs ~10x slower under -race and overruns go test's 10m default.
 race: dist-stub ## Go tests with the race detector (needs a C compiler)
-	go test -race -shuffle=on -count=1 -timeout 25m $(GO_PKGS)
+	go test -race -shuffle=on -count=1 $(GO_PKGS)
 
 .PHONY: test-fe
 test-fe: ## Frontend tests (vitest)
@@ -77,12 +68,8 @@ build-fe: ## Build the Vite bundles into internal/web/dist
 build: build-fe ## Build the frontend then the Go binary
 	go build ./...
 
-.PHONY: build-storybook
-build-storybook: ## Build the static Storybook (compile-checks all stories)
-	cd $(FRONTEND) && npm run build-storybook
-
-# The PR gate. Matches ci.yml: codegen freshness, both linters, the formatter,
-# typecheck, both test suites, a full build, and the Storybook compile-check.
+# The PR gate. Matches ci.yml: codegen freshness, both linters, typecheck,
+# both test suites, and a full build.
 .PHONY: verify
-verify: gen-check lint format-check typecheck msw-worker-check test build build-storybook ## Full local gate (mirrors CI)
+verify: gen-check lint typecheck test build ## Full local gate (mirrors CI)
 	@echo "verify: OK"

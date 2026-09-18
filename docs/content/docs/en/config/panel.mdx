@@ -1,6 +1,6 @@
 ---
 title: Panel Settings
-description: Every 3x-ui panel setting — web server, TLS, display, security, and notifications — with defaults from the source.
+description: Every Heimdall panel setting — web server, TLS, display, security, and notifications — with defaults from the source.
 icon: SlidersHorizontal
 ---
 
@@ -19,7 +19,7 @@ browser in full.
 | `webBasePath`       | `/`                     | URL path the panel is served under (always normalized to `/…/`).        |
 | `webCertFile` / `webKeyFile` | _(none)_       | TLS certificate + key. When both are set, the panel serves **HTTPS**.   |
 | `sessionMaxAge`     | `360`                   | Session lifetime in **minutes** (default 6 hours).                      |
-| `trustedProxyCIDRs` | `127.0.0.1/32,::1/128`  | IPs/CIDRs whose forwarded headers (real client IP) are trusted. A custom value also controls forwarded host and scheme in subscription links; include the subscription proxy or set `subURI` to override those links. |
+| `trustedProxyCIDRs` | `127.0.0.1/32,::1/128`  | IPs/CIDRs whose forwarded headers (real client IP) are trusted.         |
 | `panelOutbound`     | _(none)_                | Route the panel's own egress (update checks, Telegram, geo/sub fetches) through a named Xray outbound. |
 
 After changing the port or base path, the panel URL becomes
@@ -67,7 +67,6 @@ These have their own settings groups and pages:
 
 <Cards>
   <Card title="Telegram bot" href="/docs/operations/telegram-bot" description="Token, chat IDs, alerts, and reports." />
-  <Card title="Discord bot" href="/docs/operations/discord-bot" description="Token, channel ID, and event alerts." />
   <Card title="Subscription" href="/docs/config/subscription" description="Subscription server, formats, and paths." />
   <Card title="Security" href="/docs/operations/security" description="2FA, IP limits, and hardening." />
 </Cards>

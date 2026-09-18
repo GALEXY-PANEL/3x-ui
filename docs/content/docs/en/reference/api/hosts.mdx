@@ -1,6 +1,7 @@
 ---
 title: Hosts
-description: Per-inbound override endpoints. Each enabled host renders one extra
+description: >-
+  Per-inbound override endpoints. Each enabled host renders one extra
   subscription link/proxy with its own address/port/TLS, superseding the legacy
   externalProxy array. All endpoints under /panel/api/hosts.
 full: true
@@ -9,9 +10,11 @@ _openapi:
     - ./public/openapi.json
   toc:
     - depth: 2
-      title: List every host across all inbounds, grouped by inbound then ordered by
+      title: >-
+        List every host across all inbounds, grouped by inbound then ordered by
         sort order.
-      url: '#list-every-host-across-all-inbounds-grouped-by-inbound-then-ordered-by-sort-order'
+      url: >-
+        #list-every-host-across-all-inbounds-grouped-by-inbound-then-ordered-by-sort-order
     - depth: 2
       title: Fetch a single host group by Group ID.
       url: '#fetch-a-single-host-group-by-group-id'
@@ -47,9 +50,11 @@ _openapi:
       url: '#delete-many-host-groups-in-one-call'
   structuredData:
     headings:
-      - content: List every host across all inbounds, grouped by inbound then ordered by
-          sort order.
-        id: list-every-host-across-all-inbounds-grouped-by-inbound-then-ordered-by-sort-order
+      - content: >-
+          List every host across all inbounds, grouped by inbound then ordered
+          by sort order.
+        id: >-
+          list-every-host-across-all-inbounds-grouped-by-inbound-then-ordered-by-sort-order
       - content: Fetch a single host group by Group ID.
         id: fetch-a-single-host-group-by-group-id
       - content: Fetch one inbound's hosts, grouped by host group.
@@ -64,7 +69,9 @@ _openapi:
         id: delete-a-host-group
       - content: Enable or disable a host group.
         id: enable-or-disable-a-host-group
-      - content: Set host group sort order by the position of each groupId in the array.
+      - content: >-
+          Set host group sort order by the position of each groupId in the
+          array.
         id: set-host-group-sort-order-by-the-position-of-each-groupid-in-the-array
       - content: Add a host group to inbounds (same as /add).
         id: add-a-host-group-to-inbounds-same-as-add

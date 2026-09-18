@@ -1,10 +1,10 @@
 ---
 title: Installation
-description: Install 3x-ui via the official script (stable, pinned, or dev-latest), unattended/cloud-init, or Docker — and choose SQLite or PostgreSQL.
+description: Install Heimdall via the official script (stable, pinned, or dev-latest), unattended/cloud-init, or Docker — and choose SQLite or PostgreSQL.
 icon: Download
 ---
 
-3x-ui runs on a wide range of Linux distributions — Ubuntu, Debian, Armbian,
+Heimdall runs on a wide range of Linux distributions — Ubuntu, Debian, Armbian,
 Fedora, CentOS, RHEL, AlmaLinux, Rocky Linux, Oracle Linux, Amazon Linux,
 Virtuozzo, Arch, Manjaro, openSUSE (Tumbleweed/Leap), Alpine — and Windows,
 across `amd64`, `386`, `arm64`, `armv7`, `armv6`, `armv5`, and `s390x`.
@@ -23,20 +23,20 @@ The official script is the recommended path. During installation it generates a
 and installs the `x-ui` management command.
 
 ```bash title="latest stable"
-bash <(curl -Ls https://raw.githubusercontent.com/GALEXY-PANEL/3x-ui/master/install.sh)
+bash <(curl -Ls https://raw.githubusercontent.com/GALEXY-PANEL/3x-ui/main/install.sh)
 ```
 
 Install a **specific version** by appending its tag:
 
 ```bash title="pinned version"
-bash <(curl -Ls https://raw.githubusercontent.com/GALEXY-PANEL/3x-ui/master/install.sh) v3.4.0
+bash <(curl -Ls https://raw.githubusercontent.com/GALEXY-PANEL/3x-ui/main/install.sh) v3.4.0
 ```
 
 Install the rolling **dev** build (the latest per-commit pre-release from `main`
 — not a stable release) by passing `dev-latest`:
 
 ```bash title="rolling dev build"
-bash <(curl -Ls https://raw.githubusercontent.com/GALEXY-PANEL/3x-ui/master/install.sh) dev-latest
+bash <(curl -Ls https://raw.githubusercontent.com/GALEXY-PANEL/3x-ui/main/install.sh) dev-latest
 ```
 
 When it finishes, note the printed login details and run `x-ui` to open the
@@ -61,23 +61,6 @@ lines in `docker-compose.yml` and start with the profile:
 docker compose --profile postgres up -d
 ```
 
-Prefer the prebuilt image? It's published to the GitHub Container Registry. The
-image bundles Fail2ban (for [IP limits](/docs/operations/security)), which bans
-with `iptables` and therefore needs `NET_ADMIN` (and `NET_RAW` for IPv6) —
-otherwise bans are logged but never applied:
-
-```bash title="docker run"
-docker run -d \
-  --cap-add=NET_ADMIN \
-  --cap-add=NET_RAW \
-  -e XUI_ENABLE_FAIL2BAN=true \
-  -v $PWD/db/:/etc/x-ui/ \
-  -v $PWD/cert/:/root/cert/ \
-  --network=host \
-  --restart=unless-stopped \
-  --name 3x-ui \
-  ghcr.io/GALEXY-PANEL/3x-ui:latest
-```
 
 The `db/` volume holds the SQLite database (`/etc/x-ui/x-ui.db`) and `cert/`
 holds TLS certificates, so your data survives upgrades.
@@ -120,7 +103,7 @@ prompts, generating random credentials and writing them to
 `/etc/x-ui/install-result.env`:
 
 ```bash
-XUI_NONINTERACTIVE=1 bash <(curl -Ls https://raw.githubusercontent.com/GALEXY-PANEL/3x-ui/master/install.sh)
+XUI_NONINTERACTIVE=1 bash <(curl -Ls https://raw.githubusercontent.com/GALEXY-PANEL/3x-ui/main/install.sh)
 ```
 
 The repo's [`deploy/`](https://github.com/GALEXY-PANEL/3x-ui/tree/main/deploy)

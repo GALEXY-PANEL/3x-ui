@@ -54,8 +54,6 @@ exports[`createDefault*InboundSettings factories > wireguard 1`] = `
   "noKernelTun": false,
   "peers": [],
   "secretKey": "QGVlb2dXc1ZTWGw0ZXBzZndsWmtMaUM5MUlNYjBHWFdYbz0=",
-  "subnetCidr": 24,
-  "subnetIp": "10.0.0.0",
 }
 `;
 

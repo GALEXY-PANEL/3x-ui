@@ -5,7 +5,9 @@ export type SniffingDest = z.infer<typeof SniffingDestSchema>;
 
 export const SniffingSchema = z.object({
   enabled: z.boolean().default(false),
-  destOverride: z.array(SniffingDestSchema).default(['http', 'tls', 'quic', 'fakedns']),
+  destOverride: z
+    .array(SniffingDestSchema)
+    .default(['http', 'tls', 'quic', 'fakedns']),
   metadataOnly: z.boolean().default(false),
   routeOnly: z.boolean().default(false),
   ipsExcluded: z.array(z.string()).default([]),

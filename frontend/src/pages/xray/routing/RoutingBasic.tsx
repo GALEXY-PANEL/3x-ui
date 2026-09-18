@@ -13,13 +13,7 @@ import {
   directSettings,
   ipv4Settings,
 } from '../basics/constants';
-import {
-  getDefaultOutboundTag,
-  ruleGetter,
-  ruleSetter,
-  setDefaultOutboundTag,
-  syncOutbound,
-} from '../basics/helpers';
+import { getDefaultOutboundTag, ruleGetter, ruleSetter, setDefaultOutboundTag, syncOutbound } from '../basics/helpers';
 
 interface RoutingBasicProps {
   templateSettings: XraySettingsValue | null;
@@ -87,14 +81,12 @@ export default function RoutingBasic({ templateSettings, setTemplateSettings }: 
         control={
           <Switch
             checked={torrentActive}
-            onChange={(checked) =>
-              mutate((tt) => {
-                const next = checked
-                  ? [...blockedProtocols, ...BITTORRENT_PROTOCOLS]
-                  : blockedProtocols.filter((d) => !BITTORRENT_PROTOCOLS.includes(d));
-                ruleSetter(tt, 'blocked', 'protocol', next);
-              })
-            }
+            onChange={(checked) => mutate((tt) => {
+              const next = checked
+                ? [...blockedProtocols, ...BITTORRENT_PROTOCOLS]
+                : blockedProtocols.filter((d) => !BITTORRENT_PROTOCOLS.includes(d));
+              ruleSetter(tt, 'blocked', 'protocol', next);
+            })}
           />
         }
       />
@@ -143,12 +135,10 @@ export default function RoutingBasic({ templateSettings, setTemplateSettings }: 
             value={directIPs}
             style={{ width: '100%' }}
             options={IPS_OPTIONS}
-            onChange={(v) =>
-              mutate((tt) => {
-                ruleSetter(tt, 'direct', 'ip', v);
-                syncOutbound(tt, 'direct', directSettings);
-              })
-            }
+            onChange={(v) => mutate((tt) => {
+              ruleSetter(tt, 'direct', 'ip', v);
+              syncOutbound(tt, 'direct', directSettings);
+            })}
           />
         }
       />
@@ -162,12 +152,10 @@ export default function RoutingBasic({ templateSettings, setTemplateSettings }: 
             value={directDomains}
             style={{ width: '100%' }}
             options={DOMAINS_OPTIONS}
-            onChange={(v) =>
-              mutate((tt) => {
-                ruleSetter(tt, 'direct', 'domain', v);
-                syncOutbound(tt, 'direct', directSettings);
-              })
-            }
+            onChange={(v) => mutate((tt) => {
+              ruleSetter(tt, 'direct', 'domain', v);
+              syncOutbound(tt, 'direct', directSettings);
+            })}
           />
         }
       />
@@ -182,12 +170,10 @@ export default function RoutingBasic({ templateSettings, setTemplateSettings }: 
             value={ipv4Domains}
             style={{ width: '100%' }}
             options={SERVICES_OPTIONS}
-            onChange={(v) =>
-              mutate((tt) => {
-                ruleSetter(tt, 'IPv4', 'domain', v);
-                syncOutbound(tt, 'IPv4', ipv4Settings);
-              })
-            }
+            onChange={(v) => mutate((tt) => {
+              ruleSetter(tt, 'IPv4', 'domain', v);
+              syncOutbound(tt, 'IPv4', ipv4Settings);
+            })}
           />
         }
       />

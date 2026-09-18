@@ -1,12 +1,12 @@
 package panel
 
 import (
-	"crypto/subtle"
+	"encoding/json"
 	"errors"
+	"sort"
 	"strings"
 	"time"
-
-	"gorm.io/gorm"
+	"unicode/utf8"
 
 	"github.com/GALEXY-PANEL/3x-ui/v3/internal/database"
 	"github.com/GALEXY-PANEL/3x-ui/v3/internal/database/model"
@@ -17,16 +17,67 @@ import (
 
 type ApiTokenService struct{}
 
-const apiTokenLength = 48
+const (
+	apiTokenLength             = 48
+	maxPresentedAPITokenLength = 256
+
+	ApiTokenScopeClientsRead       = "clients:read"
+	ApiTokenScopeClientsCreate     = "clients:create"
+	ApiTokenScopeCustomPanelManage = "custom-panel:manage"
+)
+
+var (
+	ErrInvalidAPIToken      = errors.New("invalid API token")
+	delegatedAPITokenScopes = map[string]struct{}{
+		ApiTokenScopeClientsRead:       {},
+		ApiTokenScopeClientsCreate:     {},
+		ApiTokenScopeCustomPanelManage: {},
+	}
+)
+
+// ApiTokenCreateOptions is the trusted service-layer input used by the
+// owner-only controller. SubjectAdminId is mandatory for delegated tokens and
+// forbidden for service tokens.
+type ApiTokenCreateOptions struct {
+	Name             string
+	Kind             string
+	SubjectAdminId   int
+	CreatedByAdminId int
+	Scopes           []string
+	ExpiresAt        int64
+}
+
+// ApiTokenAuthentication contains request-local identity metadata. It never
+// contains the plaintext bearer token or its stored hash.
+type ApiTokenAuthentication struct {
+	TokenId   int
+	TokenName string
+	Kind      string
+	Scopes    []string
+	Subject   *model.User
+}
 
 type ApiTokenView struct {
-	Id        int    `json:"id" example:"2"`
-	Name      string `json:"name" example:"central-panel-a"`
-	Token     string `json:"token,omitempty" example:"new-token-string"`
-	Enabled   bool   `json:"enabled" example:"true"`
-	CreatedAt int64  `json:"createdAt" example:"1736000000"`
-	Scope     string `json:"scope" example:"admin"`
-	ExpiresAt int64  `json:"expiresAt" example:"0"`
+	Id               int      `json:"id" example:"2"`
+	Name             string   `json:"name" example:"telegram-bot-a"`
+	Token            string   `json:"token,omitempty" example:"hmd_d_new-token-string"`
+	Kind             string   `json:"kind" example:"delegated"`
+	SubjectAdminId   *int     `json:"subjectAdminId,omitempty" example:"3"`
+	SubjectUsername  string   `json:"subjectUsername,omitempty" example:"operator-a"`
+	SubjectRoleName  string   `json:"subjectRoleName,omitempty" example:"Operator"`
+	CreatedByAdminId *int     `json:"createdByAdminId,omitempty" example:"1"`
+	Scopes           []string `json:"scopes" example:"[\"clients:read\",\"clients:create\"]"`
+	ExpiresAt        int64    `json:"expiresAt" example:"1767536000"`
+	Expired          bool     `json:"expired" example:"false"`
+	Enabled          bool     `json:"enabled" example:"true"`
+	CreatedAt        int64    `json:"createdAt" example:"1736000000"`
+}
+
+type ApiTokenSubjectView struct {
+	Id       int    `json:"id" gorm:"column:id" example:"3"`
+	Username string `json:"username" gorm:"column:username" example:"operator-a"`
+	RoleId   int    `json:"roleId" gorm:"column:role_id" example:"2"`
+	RoleName string `json:"roleName" gorm:"column:role_name" example:"Operator"`
 }
 
 func apiTokenCreatedAtSeconds(createdAt int64) int64 {
@@ -36,62 +87,250 @@ func apiTokenCreatedAtSeconds(createdAt int64) int64 {
 	return createdAt
 }
 
-// toView builds the metadata view returned by List. It never carries the
-// token value: only a SHA-256 hash is stored, and the plaintext is shown
-// exactly once at creation time.
-func toView(t *model.ApiToken) *ApiTokenView {
-	return &ApiTokenView{
-		Id:        t.Id,
-		Name:      t.Name,
-		Enabled:   t.Enabled,
-		CreatedAt: apiTokenCreatedAtSeconds(t.CreatedAt),
-		Scope:     t.Scope,
-		ExpiresAt: t.ExpiresAt,
+func normalizedAPITokenKind(kind string) string {
+	kind = strings.ToLower(strings.TrimSpace(kind))
+	if kind == "" {
+		// Rows created before delegated tokens existed are trusted service tokens.
+		return model.ApiTokenKindService
 	}
+	return kind
 }
 
-// NormalizeScope validates a requested scope, defaulting empty to admin so
-// callers that omit it keep the legacy full-access behavior.
-func NormalizeScope(scope string) (string, error) {
-	switch strings.ToLower(strings.TrimSpace(scope)) {
-	case "", model.ApiScopeAdmin:
-		return model.ApiScopeAdmin, nil
-	case model.ApiScopeMonitor:
-		return model.ApiScopeMonitor, nil
-	case model.ApiScopeNodeSync:
-		return model.ApiScopeNodeSync, nil
-	default:
-		return "", common.NewError("scope must be 'admin', 'monitor', or 'node-sync'")
+func normalizeDelegatedAPITokenScopes(scopes []string) ([]string, error) {
+	seen := make(map[string]struct{}, len(scopes))
+	out := make([]string, 0, len(scopes))
+	for _, raw := range scopes {
+		scope := strings.ToLower(strings.TrimSpace(raw))
+		if scope == "" {
+			continue
+		}
+		if _, allowed := delegatedAPITokenScopes[scope]; !allowed {
+			return nil, common.NewErrorf("unsupported API token scope: %s", scope)
+		}
+		if _, duplicate := seen[scope]; duplicate {
+			continue
+		}
+		seen[scope] = struct{}{}
+		out = append(out, scope)
 	}
+	if len(out) == 0 {
+		return nil, common.NewError("at least one delegated API token scope is required")
+	}
+	sort.Strings(out)
+	return out, nil
 }
 
+func storedAPITokenScopes(row *model.ApiToken) ([]string, error) {
+	if row == nil {
+		return nil, ErrInvalidAPIToken
+	}
+	if normalizedAPITokenKind(row.Kind) == model.ApiTokenKindService {
+		return []string{"*"}, nil
+	}
+	if strings.TrimSpace(row.ScopesJSON) == "" {
+		return nil, ErrInvalidAPIToken
+	}
+	var scopes []string
+	if err := json.Unmarshal([]byte(row.ScopesJSON), &scopes); err != nil {
+		return nil, ErrInvalidAPIToken
+	}
+	normalized, err := normalizeDelegatedAPITokenScopes(scopes)
+	if err != nil {
+		return nil, ErrInvalidAPIToken
+	}
+	return normalized, nil
+}
+
+func toView(row *model.ApiToken, subject *model.User, role *model.AdminRole) *ApiTokenView {
+	kind := normalizedAPITokenKind(row.Kind)
+	scopes, err := storedAPITokenScopes(row)
+	if err != nil {
+		scopes = []string{}
+	}
+	view := &ApiTokenView{
+		Id:               row.Id,
+		Name:             row.Name,
+		Kind:             kind,
+		SubjectAdminId:   row.SubjectAdminId,
+		CreatedByAdminId: row.CreatedByAdminId,
+		Scopes:           scopes,
+		ExpiresAt:        row.ExpiresAt,
+		Expired:          row.ExpiresAt > 0 && row.ExpiresAt <= time.Now().Unix(),
+		Enabled:          row.Enabled,
+		CreatedAt:        apiTokenCreatedAtSeconds(row.CreatedAt),
+	}
+	if subject != nil {
+		view.SubjectUsername = subject.Username
+	}
+	if role != nil {
+		view.SubjectRoleName = role.Name
+	}
+	return view
+}
+
+// List resolves subject and role labels in two batched lookups, avoiding an
+// N+1 query pattern as the number of tokens grows.
 func (s *ApiTokenService) List() ([]*ApiTokenView, error) {
 	db := database.GetDB()
 	var rows []*model.ApiToken
 	if err := db.Model(model.ApiToken{}).Order("id asc").Find(&rows).Error; err != nil {
 		return nil, err
 	}
+
+	subjectIDs := make([]int, 0, len(rows))
+	seenSubjectIDs := make(map[int]struct{}, len(rows))
+	for _, row := range rows {
+		if row.SubjectAdminId == nil || *row.SubjectAdminId <= 0 {
+			continue
+		}
+		if _, seen := seenSubjectIDs[*row.SubjectAdminId]; seen {
+			continue
+		}
+		seenSubjectIDs[*row.SubjectAdminId] = struct{}{}
+		subjectIDs = append(subjectIDs, *row.SubjectAdminId)
+	}
+
+	usersByID := make(map[int]*model.User, len(subjectIDs))
+	rolesByID := make(map[int]*model.AdminRole)
+	if len(subjectIDs) > 0 {
+		var users []model.User
+		if err := db.Where("id IN ?", subjectIDs).Find(&users).Error; err != nil {
+			return nil, err
+		}
+		roleIDs := make([]int, 0, len(users))
+		seenRoleIDs := make(map[int]struct{}, len(users))
+		for i := range users {
+			user := &users[i]
+			usersByID[user.Id] = user
+			if user.RoleId <= 0 {
+				continue
+			}
+			if _, seen := seenRoleIDs[user.RoleId]; seen {
+				continue
+			}
+			seenRoleIDs[user.RoleId] = struct{}{}
+			roleIDs = append(roleIDs, user.RoleId)
+		}
+		if len(roleIDs) > 0 {
+			var roles []model.AdminRole
+			if err := db.Where("id IN ?", roleIDs).Find(&roles).Error; err != nil {
+				return nil, err
+			}
+			for i := range roles {
+				rolesByID[roles[i].Id] = &roles[i]
+			}
+		}
+	}
+
 	out := make([]*ApiTokenView, 0, len(rows))
-	for _, r := range rows {
-		out = append(out, toView(r))
+	for _, row := range rows {
+		var subject *model.User
+		var role *model.AdminRole
+		if row.SubjectAdminId != nil {
+			subject = usersByID[*row.SubjectAdminId]
+			if subject != nil {
+				role = rolesByID[subject.RoleId]
+			}
+		}
+		out = append(out, toView(row, subject, role))
 	}
 	return out, nil
 }
 
-func (s *ApiTokenService) Create(name, scope string, expiresAt int64) (*ApiTokenView, error) {
-	name = strings.TrimSpace(name)
-	if name == "" {
-		return nil, common.NewError("token name is required")
+// ListDelegatedSubjects returns the minimum metadata needed by the owner token
+// form. The join filters inactive and owner accounts in the database and avoids
+// exposing passwords, limits, contact settings, or other administrator data.
+func (s *ApiTokenService) ListDelegatedSubjects() ([]*ApiTokenSubjectView, error) {
+	db := database.GetDB()
+	if db == nil {
+		return nil, common.NewError("database is not initialized")
 	}
-	if len(name) > 64 {
-		return nil, common.NewError("token name must be 64 characters or fewer")
-	}
-	normScope, err := NormalizeScope(scope)
+	rows := make([]*ApiTokenSubjectView, 0)
+	err := db.Table("users AS u").
+		Select("u.id AS id, u.username AS username, u.role_id AS role_id, r.name AS role_name").
+		Joins("JOIN admin_roles AS r ON r.id = u.role_id").
+		Where("u.status = ? AND r.owner_role = ?", model.AdminStatusActive, false).
+		Order("LOWER(u.username) ASC").
+		Order("u.id ASC").
+		Scan(&rows).Error
 	if err != nil {
 		return nil, err
 	}
-	if expiresAt < 0 || (expiresAt != 0 && expiresAt <= nowMilli()) {
-		return nil, common.NewError("expiresAt must be 0 (never) or a future unix-ms timestamp")
+	return rows, nil
+}
+
+// Create preserves the original service-token API for trusted internal callers
+// and backward-compatible tests. Browser token creation uses CreateWithOptions
+// through an owner-only controller.
+func (s *ApiTokenService) Create(name string) (*ApiTokenView, error) {
+	return s.CreateWithOptions(ApiTokenCreateOptions{
+		Name: name,
+		Kind: model.ApiTokenKindService,
+	})
+}
+
+func (s *ApiTokenService) validateDelegatedSubject(subjectAdminID int) (*model.User, *model.AdminRole, error) {
+	if subjectAdminID <= 0 {
+		return nil, nil, common.NewError("delegated token subject is required")
+	}
+	db := database.GetDB()
+	var subject model.User
+	if err := db.Where("id = ? AND status = ?", subjectAdminID, model.AdminStatusActive).First(&subject).Error; err != nil {
+		return nil, nil, common.NewError("active delegated token subject not found")
+	}
+	var role model.AdminRole
+	if err := db.Where("id = ?", subject.RoleId).First(&role).Error; err != nil {
+		return nil, nil, common.NewError("delegated token subject role not found")
+	}
+	if role.OwnerRole {
+		return nil, nil, common.NewError("owner cannot be a delegated token subject")
+	}
+	return &subject, &role, nil
+}
+
+func (s *ApiTokenService) CreateWithOptions(opts ApiTokenCreateOptions) (*ApiTokenView, error) {
+	name := strings.TrimSpace(opts.Name)
+	if name == "" {
+		return nil, common.NewError("token name is required")
+	}
+	if utf8.RuneCountInString(name) > 64 {
+		return nil, common.NewError("token name must be 64 characters or fewer")
+	}
+
+	kind := normalizedAPITokenKind(opts.Kind)
+	if kind != model.ApiTokenKindService && kind != model.ApiTokenKindDelegated {
+		return nil, common.NewError("unsupported API token kind")
+	}
+	if opts.ExpiresAt < 0 || (opts.ExpiresAt > 0 && opts.ExpiresAt <= time.Now().Unix()) {
+		return nil, common.NewError("token expiry must be in the future")
+	}
+
+	var subject *model.User
+	var role *model.AdminRole
+	var subjectID *int
+	var scopes []string
+	var err error
+	if kind == model.ApiTokenKindDelegated {
+		subject, role, err = s.validateDelegatedSubject(opts.SubjectAdminId)
+		if err != nil {
+			return nil, err
+		}
+		scopes, err = normalizeDelegatedAPITokenScopes(opts.Scopes)
+		if err != nil {
+			return nil, err
+		}
+		id := subject.Id
+		subjectID = &id
+	} else {
+		if opts.SubjectAdminId != 0 {
+			return nil, common.NewError("service tokens cannot have a delegated subject")
+		}
+		scopes = []string{"*"}
+	}
+
+	scopesJSON, err := json.Marshal(scopes)
+	if err != nil {
+		return nil, err
 	}
 	db := database.GetDB()
 	var count int64
@@ -101,44 +340,31 @@ func (s *ApiTokenService) Create(name, scope string, expiresAt int64) (*ApiToken
 	if count > 0 {
 		return nil, common.NewError("a token with that name already exists")
 	}
-	plaintext := random.Seq(apiTokenLength)
+
+	prefix := "hmd_s_"
+	if kind == model.ApiTokenKindDelegated {
+		prefix = "hmd_d_"
+	}
+	plaintext := prefix + random.Seq(apiTokenLength)
+	var createdByID *int
+	if opts.CreatedByAdminId > 0 {
+		id := opts.CreatedByAdminId
+		createdByID = &id
+	}
 	row := &model.ApiToken{
-		Name:      name,
-		Token:     crypto.HashTokenSHA256(plaintext),
-		Enabled:   true,
-		Scope:     normScope,
-		ExpiresAt: expiresAt,
+		Name:             name,
+		Token:            crypto.HashTokenSHA256(plaintext),
+		Kind:             kind,
+		SubjectAdminId:   subjectID,
+		CreatedByAdminId: createdByID,
+		ScopesJSON:       string(scopesJSON),
+		ExpiresAt:        opts.ExpiresAt,
+		Enabled:          true,
 	}
 	if err := db.Create(row).Error; err != nil {
 		return nil, err
 	}
-	view := toView(row)
-	view.Token = plaintext
-	return view, nil
-}
-
-// RecreateByName replaces any token with this name, keeping exactly one so a
-// repeatedly-run caller cannot accumulate credentials it can never revoke.
-func (s *ApiTokenService) RecreateByName(name string) (*ApiTokenView, error) {
-	name = strings.TrimSpace(name)
-	if name == "" {
-		return nil, common.NewError("token name is required")
-	}
-	// Same column, same limit as Create: the CLI now feeds this operator input.
-	if len(name) > 64 {
-		return nil, common.NewError("token name must be 64 characters or fewer")
-	}
-	plaintext := random.Seq(apiTokenLength)
-	row := &model.ApiToken{Name: name, Token: crypto.HashTokenSHA256(plaintext), Enabled: true}
-	if err := database.GetDB().Transaction(func(tx *gorm.DB) error {
-		if err := tx.Where("name = ?", name).Delete(model.ApiToken{}).Error; err != nil {
-			return err
-		}
-		return tx.Create(row).Error
-	}); err != nil {
-		return nil, err
-	}
-	view := toView(row)
+	view := toView(row, subject, role)
 	view.Token = plaintext
 	return view, nil
 }
@@ -149,24 +375,6 @@ func (s *ApiTokenService) Delete(id int) error {
 	}
 	db := database.GetDB()
 	return db.Where("id = ?", id).Delete(model.ApiToken{}).Error
-}
-
-func (s *ApiTokenService) DeleteExpectedScope(id int, expectedScope string) error {
-	if id <= 0 {
-		return common.NewError("invalid token id")
-	}
-	scope, err := requireExpectedScope(expectedScope)
-	if err != nil {
-		return err
-	}
-	res := database.GetDB().Where("id = ? AND scope = ?", id, scope).Delete(model.ApiToken{})
-	if res.Error != nil {
-		return res.Error
-	}
-	if res.RowsAffected == 0 {
-		return errors.New("token not found with expected scope")
-	}
-	return nil
 }
 
 func (s *ApiTokenService) SetEnabled(id int, enabled bool) error {
@@ -184,80 +392,64 @@ func (s *ApiTokenService) SetEnabled(id int, enabled bool) error {
 	return nil
 }
 
-func (s *ApiTokenService) SetEnabledExpectedScope(id int, expectedScope string, enabled bool) error {
-	if id <= 0 {
-		return common.NewError("invalid token id")
-	}
-	scope, err := requireExpectedScope(expectedScope)
-	if err != nil {
-		return err
-	}
-	res := database.GetDB().Model(model.ApiToken{}).Where("id = ? AND scope = ?", id, scope).Update("enabled", enabled)
-	if res.Error != nil {
-		return res.Error
-	}
-	if res.RowsAffected == 0 {
-		return errors.New("token not found with expected scope")
-	}
-	return nil
-}
-
-func nowMilli() int64 { return time.Now().UnixMilli() }
-
-// DisableExpectedScope fails closed unless the stored scope matches the caller,
-// preventing rotation from revoking a newly minted token after a wrong ID.
-func (s *ApiTokenService) DisableExpectedScope(id int, expectedScope string) error {
-	if id <= 0 {
-		return common.NewError("invalid token id")
-	}
-	return s.SetEnabledExpectedScope(id, expectedScope, false)
-}
-
-func requireExpectedScope(expectedScope string) (string, error) {
-	if strings.TrimSpace(expectedScope) == "" {
-		return "", common.NewError("expected scope is required")
-	}
-	scope, err := NormalizeScope(expectedScope)
-	if err != nil {
-		return "", err
-	}
-	return scope, nil
-}
-
-// MatchToken returns the enabled, non-expired api_token row whose stored
-// SHA-256 hash matches the presented bearer value, or (nil,false). The loop
-// scans every enabled row with constant-time compares, then applies expiry and
-// scope checks to avoid treating corrupt values as admin.
-func (s *ApiTokenService) MatchToken(presented string) (*model.ApiToken, bool) {
-	if presented == "" {
-		return nil, false
+// Authenticate performs a single indexed lookup by SHA-256 digest. API tokens
+// carry at least 48 random characters, so direct digest equality is resistant
+// to offline guessing while avoiding the previous O(n) full-table scan.
+func (s *ApiTokenService) Authenticate(presented string) (*ApiTokenAuthentication, error) {
+	if presented == "" || len(presented) > maxPresentedAPITokenLength {
+		return nil, ErrInvalidAPIToken
 	}
 	db := database.GetDB()
-	var rows []*model.ApiToken
-	if err := db.Model(model.ApiToken{}).Where("enabled = ?", true).Find(&rows).Error; err != nil {
-		return nil, false
+	if db == nil {
+		return nil, ErrInvalidAPIToken
 	}
-	presentedHash := []byte(crypto.HashTokenSHA256(presented))
-	var matched *model.ApiToken
-	for _, r := range rows {
-		if subtle.ConstantTimeCompare([]byte(r.Token), presentedHash) == 1 {
-			matched = r
-		}
+	hash := crypto.HashTokenSHA256(presented)
+	var matches []model.ApiToken
+	if err := db.Where("token = ? AND enabled = ?", hash, true).Limit(2).Find(&matches).Error; err != nil {
+		return nil, err
 	}
-	if matched == nil {
-		return nil, false
+	// A duplicate digest should be practically impossible. Treating an
+	// ambiguous credential as invalid is safer than choosing an arbitrary row
+	// if a database was manually modified or imported from a broken source.
+	if len(matches) != 1 {
+		return nil, ErrInvalidAPIToken
 	}
-	if !model.IsKnownApiScope(matched.Scope) {
-		return nil, false
+	row := matches[0]
+	if row.ExpiresAt > 0 && row.ExpiresAt <= time.Now().Unix() {
+		return nil, ErrInvalidAPIToken
 	}
-	if matched.ExpiresAt != 0 && nowMilli() >= matched.ExpiresAt {
-		return nil, false
+
+	kind := normalizedAPITokenKind(row.Kind)
+	scopes, err := storedAPITokenScopes(&row)
+	if err != nil {
+		return nil, ErrInvalidAPIToken
 	}
-	return matched, true
+	auth := &ApiTokenAuthentication{
+		TokenId:   row.Id,
+		TokenName: row.Name,
+		Kind:      kind,
+		Scopes:    scopes,
+	}
+	if kind == model.ApiTokenKindService {
+		return auth, nil
+	}
+	if kind != model.ApiTokenKindDelegated || row.SubjectAdminId == nil {
+		return nil, ErrInvalidAPIToken
+	}
+
+	subject, role, err := s.validateDelegatedSubject(*row.SubjectAdminId)
+	if err != nil || subject == nil || role == nil {
+		return nil, ErrInvalidAPIToken
+	}
+	if err := EnforceLimitedAdminFeatures(subject); err != nil {
+		return nil, ErrInvalidAPIToken
+	}
+	auth.Subject = subject
+	return auth, nil
 }
 
-// Match is the legacy boolean form for callers that do not need scope.
+// Match remains as a compatibility wrapper for trusted internal callers.
 func (s *ApiTokenService) Match(presented string) bool {
-	_, ok := s.MatchToken(presented)
-	return ok
+	_, err := s.Authenticate(presented)
+	return err == nil
 }

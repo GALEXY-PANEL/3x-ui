@@ -42,9 +42,7 @@ export default function BulkAddToGroupModal({
       const result = await onSubmit(next);
       if (result) {
         const affected = result.affected ?? 0;
-        messageApi.success(
-          t('pages.clients.addToGroupSuccessToast', { count: affected, group: next }),
-        );
+        messageApi.success(t('pages.clients.addToGroupSuccessToast', { count: affected, group: next }));
         onOpenChange(false);
       }
     } finally {

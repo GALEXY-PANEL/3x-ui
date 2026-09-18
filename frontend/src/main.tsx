@@ -1,5 +1,5 @@
 import { createRoot } from 'react-dom/client';
-import { RouterProvider } from 'react-router/dom';
+import { RouterProvider } from 'react-router-dom';
 import { message } from 'antd';
 import 'antd/dist/reset.css';
 import '@/styles/utils.css';
@@ -16,7 +16,11 @@ setupHttp();
 
 const messageContainer = document.getElementById('message');
 if (messageContainer) {
-  message.config({ getContainer: () => messageContainer });
+  message.config({
+    getContainer: () => messageContainer,
+    duration: 1.8,
+    maxCount: 1,
+  });
 }
 
 readyI18n().then(() => {

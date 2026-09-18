@@ -59,35 +59,35 @@ func (a *InboundController) broadcastInboundsUpdate(userId int) {
 	websocket.BroadcastInbounds(inbounds)
 }
 
-// inboundServiceFor tells the service whether this request is a master's
-// node-sync push, so the node stores the row instead of re-judging it.
-func (a *InboundController) inboundServiceFor(c *gin.Context) *service.InboundService {
-	svc := a.inboundService
-	scope, _ := c.Get("api_token_scope")
-	svc.FromNodeSync = scope == model.ApiScopeNodeSync
-	return &svc
+// mmdgogoli
+func (a *InboundController) requireVisibleInbound(c *gin.Context, id int) bool {
+	if _, err := a.inboundService.RequireVisibleInbound(id); err != nil {
+		jsonMsg(c, I18nWeb(c, "pages.inbounds.toasts.obtain"), err)
+		return false
+	}
+	return true
 }
 
 // initRouter initializes the routes for inbound-related operations.
 func (a *InboundController) initRouter(g *gin.RouterGroup) {
-	g.GET("/list", a.getInbounds)
-	g.GET("/list/slim", a.getInboundsSlim)
-	g.GET("/options", a.getInboundOptions)
-	g.GET("/allLinks", a.getAllInboundLinks)
-	g.GET("/get/:id", a.getInbound)
-	g.GET("/:id/fallbacks", a.getFallbacks)
 
-	g.POST("/add", a.addInbound)
-	g.POST("/del/:id", a.delInbound)
-	g.POST("/bulkDel", a.bulkDelInbounds)
-	g.POST("/update/:id", a.updateInbound)
-	g.POST("/setEnable/:id", a.setInboundEnable)
-	g.POST("/:id/subSortIndex", a.setInboundSubSortIndex)
-	g.POST("/:id/resetTraffic", a.resetInboundTraffic)
-	g.POST("/:id/delAllClients", a.delAllInboundClients)
-	g.POST("/resetAllTraffics", a.resetAllTraffics)
-	g.POST("/import", a.importInbound)
-	g.POST("/:id/fallbacks", a.setFallbacks)
+	g.GET("/list", requirePanelPermission("inbounds", "view"), a.getInbounds)
+	g.GET("/list/slim", requirePanelPermission("inbounds", "view"), a.getInboundsSlim)
+	g.GET("/options", requirePanelPermission("inbounds", "viewSimple"), a.getInboundOptions)
+	g.GET("/allLinks", requirePanelPermission("inbounds", "view"), a.getAllInboundLinks)
+	g.GET("/get/:id", requirePanelPermission("inbounds", "view"), a.getInbound)
+	g.GET("/:id/fallbacks", requirePanelPermission("inbounds", "view"), a.getFallbacks)
+
+	g.POST("/add", requirePanelPermission("inbounds", "create"), a.addInbound)
+	g.POST("/del/:id", requirePanelPermission("inbounds", "delete"), a.delInbound)
+	g.POST("/bulkDel", requirePanelPermission("inbounds", "delete"), a.bulkDelInbounds)
+	g.POST("/update/:id", requirePanelPermission("inbounds", "update"), a.updateInbound)
+	g.POST("/setEnable/:id", requirePanelPermission("inbounds", "update"), a.setInboundEnable)
+	g.POST("/:id/resetTraffic", requirePanelPermission("inbounds", "resetUsage"), a.resetInboundTraffic)
+	g.POST("/:id/delAllClients", requirePanelPermission("inbounds", "delete"), a.delAllInboundClients)
+	g.POST("/resetAllTraffics", requirePanelPermission("inbounds", "resetUsage"), a.resetAllTraffics)
+	g.POST("/import", requirePanelPermission("inbounds", "create"), a.importInbound)
+	g.POST("/:id/fallbacks", requirePanelPermission("inbounds", "update"), a.setFallbacks)
 	g.POST("/pushClientTraffics", a.pushClientTraffics)
 }
 
@@ -137,6 +137,22 @@ func (a *InboundController) getInboundOptions(c *gin.Context) {
 		jsonMsg(c, I18nWeb(c, "pages.inbounds.toasts.obtain"), err)
 		return
 	}
+
+	if restricted, allowedInboundIDs := a.clientService.RestrictedInboundIDsForAdmin(user); restricted {
+		allowed := make(map[int]struct{}, len(allowedInboundIDs))
+		for _, id := range allowedInboundIDs {
+			allowed[id] = struct{}{}
+		}
+
+		filtered := options[:0]
+		for _, option := range options {
+			if _, ok := allowed[option.Id]; ok {
+				filtered = append(filtered, option)
+			}
+		}
+		options = filtered
+	}
+
 	jsonObj(c, options, nil)
 }
 
@@ -171,7 +187,7 @@ func (a *InboundController) addInbound(c *gin.Context) {
 		inbound.NodeID = nil
 	}
 
-	inbound, needRestart, err := a.inboundServiceFor(c).AddInbound(inbound)
+	inbound, needRestart, err := a.inboundService.AddInbound(inbound)
 	if err != nil {
 		jsonMsg(c, I18nWeb(c, "somethingWentWrong"), err)
 		return
@@ -191,15 +207,23 @@ func (a *InboundController) delInbound(c *gin.Context) {
 		jsonMsg(c, I18nWeb(c, "pages.inbounds.toasts.inboundDeleteSuccess"), err)
 		return
 	}
+
+	if !a.requireVisibleInbound(c, id) {
+		return
+	}
+
 	needRestart, err := a.inboundService.DelInbound(id)
 	if err != nil {
 		jsonMsg(c, I18nWeb(c, "somethingWentWrong"), err)
 		return
 	}
+
 	jsonMsgObj(c, I18nWeb(c, "pages.inbounds.toasts.inboundDeleteSuccess"), id, nil)
+
 	if needRestart {
 		a.xrayService.SetToNeedRestart()
 	}
+
 	user := session.GetLoginUser(c)
 	a.broadcastInboundsUpdate(user.Id)
 	notifyClientsChanged()
@@ -209,23 +233,40 @@ type bulkDelInboundsRequest struct {
 	Ids []int `json:"ids"`
 }
 
-// bulkDelInbounds deletes several inbounds in one call. Failures are
-// reported per id and the rest still proceed; xray restarts at most once.
+// bulkDelInbounds deletes several visible inbounds in one call.
+// Hidden/internal inbounds are silently ignored so direct API calls cannot
+// delete tunnel inbounds even if their IDs are guessed.
 func (a *InboundController) bulkDelInbounds(c *gin.Context) {
 	var req bulkDelInboundsRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		jsonMsg(c, I18nWeb(c, "somethingWentWrong"), err)
 		return
 	}
-	result, needRestart, err := a.inboundService.DelInbounds(req.Ids)
+
+	visibleIds := make([]int, 0, len(req.Ids))
+	for _, id := range req.Ids {
+		if _, err := a.inboundService.RequireVisibleInbound(id); err == nil {
+			visibleIds = append(visibleIds, id)
+		}
+	}
+
+	if len(visibleIds) == 0 {
+		jsonObj(c, service.BulkDelInboundResult{}, nil)
+		return
+	}
+
+	result, needRestart, err := a.inboundService.DelInbounds(visibleIds)
 	if err != nil {
 		jsonMsg(c, I18nWeb(c, "somethingWentWrong"), err)
 		return
 	}
+
 	jsonObj(c, result, nil)
+
 	if needRestart {
 		a.xrayService.SetToNeedRestart()
 	}
+
 	user := session.GetLoginUser(c)
 	a.broadcastInboundsUpdate(user.Id)
 	notifyClientsChanged()
@@ -238,12 +279,19 @@ func (a *InboundController) updateInbound(c *gin.Context) {
 		jsonMsg(c, I18nWeb(c, "pages.inbounds.toasts.inboundUpdateSuccess"), err)
 		return
 	}
+
+	if !a.requireVisibleInbound(c, id) {
+		return
+	}
+
 	inbound := &model.Inbound{
 		Id: id,
 	}
+
 	if !middleware.BindAndValidateInto(c, inbound) {
 		return
 	}
+
 	// Same NodeID=0 → nil normalisation as addInbound. UpdateInbound
 	// loads the existing row's NodeID from DB anyway (Phase 1 doesn't
 	// support migrating an inbound between nodes), but normalising here
@@ -251,67 +299,62 @@ func (a *InboundController) updateInbound(c *gin.Context) {
 	if inbound.NodeID != nil && *inbound.NodeID == 0 {
 		inbound.NodeID = nil
 	}
-	inbound, needRestart, err := a.inboundServiceFor(c).UpdateInbound(inbound)
+
+	inbound, needRestart, err := a.inboundService.UpdateInbound(inbound)
 	if err != nil {
 		jsonMsg(c, I18nWeb(c, "somethingWentWrong"), err)
 		return
 	}
+
 	jsonMsgObj(c, I18nWeb(c, "pages.inbounds.toasts.inboundUpdateSuccess"), inbound, nil)
+
 	if needRestart {
 		a.xrayService.SetToNeedRestart()
 	}
+
 	user := session.GetLoginUser(c)
 	a.broadcastInboundsUpdate(user.Id)
 	notifyClientsChanged()
 }
 
-// setInboundSubSortIndex changes only subscription ordering without sending
-// the inbound's settings/client payload.
-func (a *InboundController) setInboundSubSortIndex(c *gin.Context) {
-	id, err := strconv.Atoi(c.Param("id"))
-	if err != nil {
-		jsonMsg(c, I18nWeb(c, "pages.inbounds.toasts.inboundUpdateSuccess"), err)
-		return
-	}
-	type form struct {
-		SubSortIndex int `json:"subSortIndex" form:"subSortIndex" binding:"required"`
-	}
-	var f form
-	if err := c.ShouldBind(&f); err != nil {
-		jsonMsg(c, I18nWeb(c, "somethingWentWrong"), err)
-		return
-	}
-	if err := a.inboundService.SetInboundSubSortIndex(id, f.SubSortIndex); err != nil {
-		jsonMsg(c, I18nWeb(c, "somethingWentWrong"), err)
-		return
-	}
-	jsonMsg(c, I18nWeb(c, "pages.inbounds.toasts.inboundUpdateSuccess"), nil)
-	websocket.BroadcastInvalidate(websocket.MessageTypeInbounds)
-}
-
+// setInboundEnable flips only the enable flag of an inbound. This is a
+// dedicated endpoint because the regular update path serialises the entire
+// settings JSON (every client) — far too heavy for an interactive switch
+// on inbounds with thousands of clients. Frontend optimistically updates
+// the UI; we just persist + sync xray + nudge other open admin sessions.
 func (a *InboundController) setInboundEnable(c *gin.Context) {
 	id, err := strconv.Atoi(c.Param("id"))
 	if err != nil {
 		jsonMsg(c, I18nWeb(c, "pages.inbounds.toasts.inboundUpdateSuccess"), err)
 		return
 	}
+
+	if !a.requireVisibleInbound(c, id) {
+		return
+	}
+
 	type form struct {
 		Enable bool `json:"enable" form:"enable"`
 	}
+
 	var f form
 	if err := c.ShouldBind(&f); err != nil {
 		jsonMsg(c, I18nWeb(c, "somethingWentWrong"), err)
 		return
 	}
+
 	needRestart, err := a.inboundService.SetInboundEnable(id, f.Enable)
 	if err != nil {
 		jsonMsg(c, I18nWeb(c, "somethingWentWrong"), err)
 		return
 	}
+
 	jsonMsg(c, I18nWeb(c, "pages.inbounds.toasts.inboundUpdateSuccess"), nil)
+
 	if needRestart {
 		a.xrayService.SetToNeedRestart()
 	}
+
 	// Cross-admin sync: lightweight invalidate signal (a few hundred bytes)
 	// instead of fetching + serialising the whole inbound list. Other open
 	// sessions re-fetch via REST. The toggling admin's own UI already
@@ -327,13 +370,17 @@ func (a *InboundController) resetInboundTraffic(c *gin.Context) {
 		return
 	}
 
+	if !a.requireVisibleInbound(c, id) {
+		return
+	}
+
 	err = a.inboundService.ResetInboundTraffic(id)
 	if err != nil {
 		jsonMsg(c, I18nWeb(c, "somethingWentWrong"), err)
 		return
-	} else {
-		a.xrayService.SetToNeedRestart()
 	}
+
+	a.xrayService.SetToNeedRestart()
 	jsonMsg(c, I18nWeb(c, "pages.inbounds.toasts.resetInboundTrafficSuccess"), nil)
 }
 
@@ -348,24 +395,34 @@ func (a *InboundController) delAllInboundClients(c *gin.Context) {
 		jsonMsg(c, I18nWeb(c, "somethingWentWrong"), err)
 		return
 	}
+
+	if !a.requireVisibleInbound(c, id) {
+		return
+	}
+
 	emails, err := a.inboundService.EmailsByInbound(id)
 	if err != nil {
 		jsonMsg(c, I18nWeb(c, "somethingWentWrong"), err)
 		return
 	}
+
 	if len(emails) == 0 {
 		jsonObj(c, service.BulkDeleteResult{}, nil)
 		return
 	}
+
 	result, needRestart, err := a.clientService.BulkDelete(&a.inboundService, emails, false)
 	if err != nil {
 		jsonMsg(c, I18nWeb(c, "somethingWentWrong"), err)
 		return
 	}
+
 	jsonObj(c, result, nil)
+
 	if needRestart {
 		a.xrayService.SetToNeedRestart()
 	}
+
 	user := session.GetLoginUser(c)
 	a.broadcastInboundsUpdate(user.Id)
 	notifyClientsChanged()
@@ -475,14 +532,22 @@ func (a *InboundController) getFallbacks(c *gin.Context) {
 		jsonMsg(c, I18nWeb(c, "get"), err)
 		return
 	}
+
+	if !a.requireVisibleInbound(c, id) {
+		return
+	}
+
 	rows, err := a.fallbackService.GetByMaster(id)
 	if err != nil {
 		jsonMsg(c, I18nWeb(c, "get"), err)
 		return
 	}
+
 	jsonObj(c, rows, nil)
 }
 
+// setFallbacks atomically replaces the master inbound's fallback list
+// and triggers an Xray restart so the new settings.fallbacks take effect.
 // setFallbacks atomically replaces the master inbound's fallback list
 // and triggers an Xray restart so the new settings.fallbacks take effect.
 func (a *InboundController) setFallbacks(c *gin.Context) {
@@ -491,18 +556,26 @@ func (a *InboundController) setFallbacks(c *gin.Context) {
 		jsonMsg(c, I18nWeb(c, "somethingWentWrong"), err)
 		return
 	}
+
+	if !a.requireVisibleInbound(c, id) {
+		return
+	}
+
 	type body struct {
 		Fallbacks []service.FallbackInput `json:"fallbacks"`
 	}
+
 	var b body
 	if err := c.ShouldBindJSON(&b); err != nil {
 		jsonMsg(c, I18nWeb(c, "somethingWentWrong"), err)
 		return
 	}
+
 	if err := a.fallbackService.SetByMaster(id, b.Fallbacks); err != nil {
 		jsonMsg(c, I18nWeb(c, "somethingWentWrong"), err)
 		return
 	}
+
 	a.xrayService.SetToNeedRestart()
 	jsonMsg(c, I18nWeb(c, "pages.inbounds.toasts.inboundUpdateSuccess"), nil)
 }

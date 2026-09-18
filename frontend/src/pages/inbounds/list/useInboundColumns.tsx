@@ -10,11 +10,6 @@ import type { NodeRecord } from '@/api/queries/useNodesQuery';
 import { coerceInboundJsonField } from '@/models/dbinbound';
 
 import { RowActionsCell } from './RowActions';
-import {
-  SPEED_COLUMN_WIDTH,
-  SPEED_TAG_CLASS_NAME,
-  SPEED_TAG_STYLE,
-} from '@/components/utility/speedTagStyle';
 import { InboundSpeedTag, isActiveSpeed } from './InboundSpeedTag';
 import {
   readStreamHints,
@@ -23,7 +18,6 @@ import {
   shadowsocksNetworkLabel,
   tunnelNetworkLabel,
   mixedNetworkLabel,
-  formatHostRemarksLabel,
 } from './helpers';
 import type { ClientCountEntry, DBInboundRecord, InboundSpeedEntry, RowAction } from './types';
 
@@ -32,7 +26,6 @@ interface UseInboundColumnsParams {
   hasAnySubSortIndex: boolean;
   hasActiveNode: boolean;
   nodesById: Map<number, NodeRecord>;
-  hostRemarksByInboundId: Map<number, string[]>;
   clientCount: Record<number, ClientCountEntry>;
   inboundSpeed: Record<number, InboundSpeedEntry>;
   subEnable: boolean;
@@ -47,7 +40,6 @@ export function useInboundColumns({
   hasAnySubSortIndex,
   hasActiveNode,
   nodesById,
-  hostRemarksByInboundId,
   clientCount,
   inboundSpeed,
   subEnable,
@@ -60,24 +52,27 @@ export function useInboundColumns({
   const { datepicker } = useDatepicker();
 
   return useMemo(() => {
-    const compareText = (a: string | undefined | null, b: string | undefined | null) =>
-      (a || '').localeCompare(b || '', undefined, { numeric: true, sensitivity: 'base' });
+    const compareText = (a: string | undefined | null, b: string | undefined | null) => (
+      (a || '').localeCompare(b || '', undefined, { numeric: true, sensitivity: 'base' })
+    );
 
     const nodeName = (record: DBInboundRecord) => {
       if (record.nodeId == null) return t('pages.inbounds.localPanel');
       return nodesById.get(record.nodeId)?.name || `node #${record.nodeId}`;
     };
 
-    const clientTotal = (record: DBInboundRecord) =>
-      (clientCount[record.id] || fallbackClientCount(record))?.clients ?? 0;
+    const clientTotal = (record: DBInboundRecord) => (
+      (clientCount[record.id] || fallbackClientCount(record))?.clients ?? 0
+    );
 
     const speedTotal = (record: DBInboundRecord) => {
       const speed = inboundSpeed[record.id];
       return speed ? speed.up + speed.down : 0;
     };
 
-    const expirySortValue = (record: DBInboundRecord) =>
-      record.expiryTime > 0 ? record.expiryTime : Number.MAX_SAFE_INTEGER;
+    const expirySortValue = (record: DBInboundRecord) => (
+      record.expiryTime > 0 ? record.expiryTime : Number.MAX_SAFE_INTEGER
+    );
 
     const fallbackClientCount = (record: DBInboundRecord): ClientCountEntry | null => {
       const settings = coerceInboundJsonField(record.settings) as {
@@ -130,7 +125,10 @@ export function useInboundColumns({
         align: 'center',
         width: 80,
         render: (_, record) => (
-          <Switch checked={record.enable} onChange={(next) => onSwitchEnable(record, next)} />
+          <Switch
+            checked={record.enable}
+            onChange={(next) => onSwitchEnable(record, next)}
+          />
         ),
       },
     ];
@@ -141,23 +139,8 @@ export function useInboundColumns({
         dataIndex: 'remark',
         key: 'remark',
         align: 'center',
-        width: 140,
+        width: 90,
         sorter: (a, b) => compareText(a.remark, b.remark),
-        render: (_, record) => {
-          const hostRemarks = hostRemarksByInboundId.get(record.id) ?? [];
-          if (hostRemarks.length === 0) {
-            return record.remark || null;
-          }
-          const { display, full } = formatHostRemarksLabel(hostRemarks);
-          return (
-            <div className="inbound-remark-cell">
-              <div className="inbound-remark">{record.remark}</div>
-              <Tooltip title={full}>
-                <div className="inbound-host-remarks">({display})</div>
-              </Tooltip>
-            </div>
-          );
-        },
       });
     }
 
@@ -176,7 +159,9 @@ export function useInboundColumns({
           if (!node) {
             return <Tag color="orange">node #{record.nodeId}</Tag>;
           }
-          return <Tag color={node.status === 'online' ? 'blue' : 'red'}>{node.name}</Tag>;
+          return (
+            <Tag color={node.status === 'online' ? 'blue' : 'red'}>{node.name}</Tag>
+          );
         },
       });
     }
@@ -212,68 +197,24 @@ export function useInboundColumns({
         width: 190,
         sorter: (a, b) => compareText(a.protocol, b.protocol),
         render: (_, record) => {
-          const tags: ReactElement[] = [
-            <Tag key="p" color="purple">
-              {record.protocol}
-            </Tag>,
-          ];
-          if (record.isWireguard || record.isAmneziawg || record.isHysteria || record.isTuic) {
-            tags.push(
-              <Tag key="n" color="green">
-                UDP
-              </Tag>,
-            );
+          const tags: ReactElement[] = [<Tag key="p" color="purple">{record.protocol}</Tag>];
+          if (record.isWireguard || record.isHysteria) {
+            tags.push(<Tag key="n" color="green">UDP</Tag>);
           } else if (record.isSS) {
             const stream = readStreamHints(record.streamSettings);
-            tags.push(
-              <Tag key="n" color="green">
-                {shadowsocksNetworkLabel(record.settings)}
-              </Tag>,
-            );
-            if (stream.isTls)
-              tags.push(
-                <Tag key="tls" color="blue">
-                  TLS
-                </Tag>,
-              );
+            tags.push(<Tag key="n" color="green">{shadowsocksNetworkLabel(record.settings)}</Tag>);
+            if (stream.isTls) tags.push(<Tag key="tls" color="blue">TLS</Tag>);
           } else if (record.isTunnel) {
-            tags.push(
-              <Tag key="n" color="green">
-                {tunnelNetworkLabel(record.settings)}
-              </Tag>,
-            );
+            tags.push(<Tag key="n" color="green">{tunnelNetworkLabel(record.settings)}</Tag>);
           } else if (record.isMixed) {
-            tags.push(
-              <Tag key="n" color="green">
-                {mixedNetworkLabel(record.settings)}
-              </Tag>,
-            );
+            tags.push(<Tag key="n" color="green">{mixedNetworkLabel(record.settings)}</Tag>);
           } else if (record.isVMess || record.isVLess || record.isTrojan) {
             const stream = readStreamHints(record.streamSettings);
-            tags.push(
-              <Tag key="n" color="green">
-                {networkLabel(stream.network)}
-              </Tag>,
-            );
+            tags.push(<Tag key="n" color="green">{networkLabel(stream.network)}</Tag>);
             const l4 = networkL4(stream.network);
-            if (l4)
-              tags.push(
-                <Tag key="l4" color="green">
-                  {l4}
-                </Tag>,
-              );
-            if (stream.isTls)
-              tags.push(
-                <Tag key="tls" color="blue">
-                  TLS
-                </Tag>,
-              );
-            if (stream.isReality)
-              tags.push(
-                <Tag key="reality" color="blue">
-                  Reality
-                </Tag>,
-              );
+            if (l4) tags.push(<Tag key="l4" color="green">{l4}</Tag>);
+            if (stream.isTls) tags.push(<Tag key="tls" color="blue">TLS</Tag>);
+            if (stream.isReality) tags.push(<Tag key="reality" color="blue">Reality</Tag>);
           }
           return <div className="protocol-tags">{tags}</div>;
         },
@@ -289,97 +230,57 @@ export function useInboundColumns({
           if (!cc) return null;
           return (
             <>
-              <Tag
-                className="client-count-tag"
-                style={{ margin: 0, marginRight: 4, padding: '0 2px' }}
-              >
+              <Tag className="client-count-tag" style={{ margin: 0, marginRight: 4, padding: '0 2px' }}>
                 <TeamOutlined /> {cc.clients}
               </Tag>
               {cc.active.length > 0 ? (
                 <Popover
                   title={t('subscription.active')}
-                  content={
+                  content={(
                     <div className="client-email-list">
-                      {cc.active.map((e) => (
-                        <div key={e}>{e}</div>
-                      ))}
+                      {cc.active.map((e) => <div key={e}>{e}</div>)}
                     </div>
-                  }
+                  )}
                 >
-                  <Tag
-                    color="green"
-                    className="client-count-tag"
-                    style={{ margin: 0, marginRight: 4, padding: '0 2px' }}
-                  >
-                    {cc.active.length}
-                  </Tag>
+                  <Tag color="green" className="client-count-tag" style={{ margin: 0, marginRight: 4, padding: '0 2px' }}>{cc.active.length}</Tag>
                 </Popover>
               ) : (
-                <Tag
-                  color="green"
-                  className="client-count-tag"
-                  style={{ margin: 0, marginRight: 4, padding: '0 2px' }}
-                >
-                  0
-                </Tag>
+                <Tag color="green" className="client-count-tag" style={{ margin: 0, marginRight: 4, padding: '0 2px' }}>0</Tag>
               )}
               {cc.deactive.length > 0 && (
                 <Popover
                   title={t('disabled')}
-                  content={
+                  content={(
                     <div className="client-email-list">
-                      {cc.deactive.map((e) => (
-                        <div key={e}>{e}</div>
-                      ))}
+                      {cc.deactive.map((e) => <div key={e}>{e}</div>)}
                     </div>
-                  }
+                  )}
                 >
-                  <Tag
-                    className="client-count-tag"
-                    style={{ margin: 0, marginRight: 4, padding: '0 2px' }}
-                  >
-                    {cc.deactive.length}
-                  </Tag>
+                  <Tag className="client-count-tag" style={{ margin: 0, marginRight: 4, padding: '0 2px' }}>{cc.deactive.length}</Tag>
                 </Popover>
               )}
               {cc.depleted.length > 0 && (
                 <Popover
                   title={t('depleted')}
-                  content={
+                  content={(
                     <div className="client-email-list">
-                      {cc.depleted.map((e) => (
-                        <div key={e}>{e}</div>
-                      ))}
+                      {cc.depleted.map((e) => <div key={e}>{e}</div>)}
                     </div>
-                  }
+                  )}
                 >
-                  <Tag
-                    color="red"
-                    className="client-count-tag"
-                    style={{ margin: 0, marginRight: 4, padding: '0 2px' }}
-                  >
-                    {cc.depleted.length}
-                  </Tag>
+                  <Tag color="red" className="client-count-tag" style={{ margin: 0, marginRight: 4, padding: '0 2px' }}>{cc.depleted.length}</Tag>
                 </Popover>
               )}
               {cc.online.length > 0 && (
                 <Popover
                   title={t('online')}
-                  content={
+                  content={(
                     <div className="client-email-list">
-                      {cc.online.map((e) => (
-                        <div key={e}>{e}</div>
-                      ))}
+                      {cc.online.map((e) => <div key={e}>{e}</div>)}
                     </div>
-                  }
+                  )}
                 >
-                  <Tag
-                    color="blue"
-                    className="client-count-tag"
-                    style={{ margin: 0, padding: '0 2px' }}
-                  >
-                    {cc.online.length}
-                  </Tag>
+                  <Tag color="blue" className="client-count-tag" style={{ margin: 0, padding: '0 2px' }}>{cc.online.length}</Tag>
                 </Popover>
               )}
             </>
@@ -391,10 +292,10 @@ export function useInboundColumns({
         key: 'traffic',
         align: 'center',
         width: 140,
-        sorter: (a, b) => a.up + a.down - (b.up + b.down),
+        sorter: (a, b) => (a.up + a.down) - (b.up + b.down),
         render: (_, record) => (
           <Popover
-            content={
+            content={(
               <table cellPadding={2}>
                 <tbody>
                   <tr>
@@ -409,31 +310,40 @@ export function useInboundColumns({
                   )}
                 </tbody>
               </table>
-            }
+            )}
           >
             <Tag color={ColorUtils.usageColor(record.up + record.down, trafficDiff, record.total)}>
-              {SizeFormatter.sizeFormat(record.up + record.down)} /{' '}
+              {SizeFormatter.sizeFormat(record.up + record.down)} /
+              {' '}
               {record.total > 0 ? SizeFormatter.sizeFormat(record.total) : <InfinityIcon />}
             </Tag>
           </Popover>
         ),
       },
       {
+        title: t('pages.inbounds.usageMultiplier'),
+        key: 'usageMultiplier',
+        align: 'center',
+        width: 90,
+        render: (_, record) => {
+          const raw = (record as DBInboundRecord & { usageMultiplier?: unknown }).usageMultiplier;
+          const multiplier = typeof raw === 'number' && Number.isFinite(raw) ? raw : 1;
+          const label = Number.isInteger(multiplier) ? multiplier.toFixed(0) : multiplier.toFixed(2);
+          return <Tag color={multiplier > 1 ? 'orange' : 'default'}>{label}×</Tag>;
+        },
+      },
+      {
         title: t('pages.inbounds.speed'),
         key: 'speed',
         align: 'center',
-        width: SPEED_COLUMN_WIDTH,
+        width: 110,
         sorter: (a, b) => speedTotal(a) - speedTotal(b),
         render: (_, record) => {
           const speed = inboundSpeed[record.id];
           if (!isActiveSpeed(speed)) {
-            return (
-              <Tag color="default" className={SPEED_TAG_CLASS_NAME} style={SPEED_TAG_STYLE}>
-                —
-              </Tag>
-            );
+            return <Tag color='default'>—</Tag>;
           }
-          return <InboundSpeedTag speed={speed} withTooltip tableCell />;
+          return <InboundSpeedTag speed={speed} withTooltip />;
         },
       },
       {
@@ -446,39 +356,17 @@ export function useInboundColumns({
           if (record.expiryTime > 0) {
             return (
               <Popover content={IntlUtil.formatDate(record.expiryTime, datepicker)}>
-                <Tag
-                  color={ColorUtils.usageColor(Date.now(), expireDiff, record._expiryTime)}
-                  style={{ minWidth: 50 }}
-                >
+                <Tag color={ColorUtils.usageColor(Date.now(), expireDiff, record._expiryTime)} style={{ minWidth: 50 }}>
                   {IntlUtil.formatRelativeTime(record.expiryTime)}
                 </Tag>
               </Popover>
             );
           }
-          return (
-            <Tag color="purple">
-              <InfinityIcon />
-            </Tag>
-          );
+          return <Tag color="purple"><InfinityIcon /></Tag>;
         },
       },
     );
 
     return cols;
-  }, [
-    t,
-    hasAnyRemark,
-    hasAnySubSortIndex,
-    hasActiveNode,
-    nodesById,
-    hostRemarksByInboundId,
-    clientCount,
-    inboundSpeed,
-    subEnable,
-    expireDiff,
-    trafficDiff,
-    datepicker,
-    onRowAction,
-    onSwitchEnable,
-  ]);
+  }, [t, hasAnyRemark, hasAnySubSortIndex, hasActiveNode, nodesById, clientCount, inboundSpeed, subEnable, expireDiff, trafficDiff, datepicker, onRowAction, onSwitchEnable]);
 }

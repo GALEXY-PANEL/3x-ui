@@ -5,54 +5,16 @@ export const SCHEMAS: Record<string, unknown> = {
       "datepicker": {
         "type": "string"
       },
-      "discordAdminIds": {
-        "type": "string"
-      },
-      "discordBotBackup": {
-        "type": "boolean"
-      },
-      "discordBotEnable": {
-        "type": "boolean"
-      },
-      "discordBotToken": {
-        "type": "string"
-      },
-      "discordChannelId": {
-        "type": "string"
-      },
-      "discordCpu": {
-        "maximum": 100,
-        "minimum": 0,
-        "type": "integer"
-      },
-      "discordEnabledEvents": {
-        "type": "string"
-      },
-      "discordLang": {
-        "type": "string"
-      },
-      "discordMemory": {
-        "maximum": 100,
-        "minimum": 0,
-        "type": "integer"
-      },
-      "discordRunTime": {
-        "type": "string"
-      },
       "expireDiff": {
         "minimum": 0,
         "type": "integer"
       },
       "externalTrafficInformEnable": {
+        "description": "Enable external traffic reporting",
         "type": "boolean"
       },
       "externalTrafficInformURI": {
-        "type": "string"
-      },
-      "happLinkEnable": {
-        "type": "boolean"
-      },
-      "ipLimitAllowlist": {
+        "description": "URI for external traffic reporting",
         "type": "string"
       },
       "ldapAutoCreate": {
@@ -123,11 +85,6 @@ export const SCHEMAS: Record<string, unknown> = {
       "ldapVlessField": {
         "type": "string"
       },
-      "outboundDownThreshold": {
-        "maximum": 100,
-        "minimum": 1,
-        "type": "integer"
-      },
       "pageSize": {
         "maximum": 1000,
         "minimum": 0,
@@ -136,13 +93,11 @@ export const SCHEMAS: Record<string, unknown> = {
       "panelOutbound": {
         "type": "string"
       },
-      "realityScanCandidates": {
-        "type": "string"
-      },
       "remarkTemplate": {
         "type": "string"
       },
       "restartXrayOnClientDisable": {
+        "description": "Restart Xray when clients are auto-disabled by expiry/traffic limit",
         "type": "boolean"
       },
       "sessionMaxAge": {
@@ -162,12 +117,6 @@ export const SCHEMAS: Record<string, unknown> = {
         "type": "string"
       },
       "smtpEncryptionType": {
-        "type": "string"
-      },
-      "smtpFrom": {
-        "type": "string"
-      },
-      "smtpFromName": {
         "type": "string"
       },
       "smtpHost": {
@@ -193,210 +142,129 @@ export const SCHEMAS: Record<string, unknown> = {
         "type": "string"
       },
       "subAnnounce": {
+        "description": "Subscription announce",
         "type": "string"
-      },
-      "subCalendarExpireInclusive": {
-        "type": "boolean"
       },
       "subCertFile": {
+        "description": "SSL certificate file for subscription server",
         "type": "string"
       },
-      "subClashAutoDetect": {
-        "type": "boolean"
-      },
       "subClashEnable": {
+        "description": "Enable Clash/Mihomo subscription endpoint",
         "type": "boolean"
       },
       "subClashEnableRouting": {
+        "description": "Enable global routing rules for Clash/Mihomo",
         "type": "boolean"
       },
       "subClashPath": {
+        "description": "Path for Clash/Mihomo subscription endpoint",
         "type": "string"
       },
       "subClashRules": {
+        "description": "Clash/Mihomo global routing rules",
         "type": "string"
       },
       "subClashURI": {
+        "description": "Clash/Mihomo subscription server URI",
         "type": "string"
       },
-      "subClashUserAgentRegex": {
+      "subClientImportFormat": {
+        "description": "Default non-HTML /sub import format: normal or json",
         "type": "string"
       },
       "subDomain": {
+        "description": "Domain for subscription server validation",
         "type": "string"
       },
       "subEnable": {
+        "description": "Subscription server settings\nEnable subscription server",
         "type": "boolean"
       },
       "subEnableRouting": {
+        "description": "Enable routing for subscription",
         "type": "boolean"
       },
       "subEncrypt": {
+        "description": "Encrypt subscription responses",
         "type": "boolean"
-      },
-      "subExpiredTemplate": {
-        "type": "string"
-      },
-      "subHappAlwaysHwid": {
-        "type": "boolean"
-      },
-      "subHappAutoConnect": {
-        "type": "boolean"
-      },
-      "subHappAutoConnectType": {
-        "type": "string"
-      },
-      "subHappAutoDetect": {
-        "description": "Happ client customization settings (app-management / routing / UX).",
-        "type": "boolean"
-      },
-      "subHappColorProfile": {
-        "type": "string"
-      },
-      "subHappExcludeApns": {
-        "type": "boolean"
-      },
-      "subHappExcludeRoutes": {
-        "type": "string"
-      },
-      "subHappFallbackUrl": {
-        "type": "string"
-      },
-      "subHappNewUrl": {
-        "type": "string"
-      },
-      "subHappNoLimit": {
-        "type": "boolean"
-      },
-      "subHappNotificationExpire": {
-        "type": "boolean"
-      },
-      "subHappPerAppList": {
-        "type": "string"
-      },
-      "subHappPerAppMode": {
-        "type": "string"
-      },
-      "subHappPingType": {
-        "type": "string"
-      },
-      "subHappProviderId": {
-        "type": "string"
-      },
-      "subHappSubExpire": {
-        "type": "boolean"
-      },
-      "subHappSubExpireButtonLink": {
-        "type": "string"
-      },
-      "subHappSubInfoButtonLink": {
-        "type": "string"
-      },
-      "subHappSubInfoButtonText": {
-        "type": "string"
-      },
-      "subHappSubInfoColor": {
-        "type": "string"
-      },
-      "subHappSubInfoText": {
-        "type": "string"
-      },
-      "subHappTunMode": {
-        "type": "string"
-      },
-      "subHappTunType": {
-        "type": "string"
       },
       "subHideSettings": {
         "type": "boolean"
       },
       "subIncyEnableRouting": {
+        "description": "Enable routing injection for the Incy client",
         "type": "boolean"
       },
       "subIncyRoutingRules": {
-        "type": "string"
-      },
-      "subInfoNodeEnable": {
-        "type": "boolean"
-      },
-      "subJsonAlwaysArray": {
-        "type": "boolean"
-      },
-      "subJsonAutoDetect": {
-        "type": "boolean"
-      },
-      "subJsonDns": {
+        "description": "Incy routing deep-link injected into the subscription body (Only for Incy)",
         "type": "string"
       },
       "subJsonEnable": {
+        "description": "Enable JSON subscription endpoint",
         "type": "boolean"
       },
       "subJsonFinalMask": {
         "type": "string"
       },
       "subJsonMux": {
-        "type": "string"
-      },
-      "subJsonObservatory": {
+        "description": "JSON subscription mux configuration",
         "type": "string"
       },
       "subJsonPath": {
-        "type": "string"
-      },
-      "subJsonRoutingRules": {
+        "description": "Path for JSON subscription endpoint",
         "type": "string"
       },
       "subJsonRules": {
         "type": "string"
       },
       "subJsonURI": {
-        "type": "string"
-      },
-      "subJsonUserAgentRegex": {
+        "description": "JSON subscription server URI",
         "type": "string"
       },
       "subKeyFile": {
+        "description": "SSL private key file for subscription server",
         "type": "string"
       },
       "subListen": {
+        "description": "Subscription server listen IP",
         "type": "string"
       },
       "subPath": {
+        "description": "Base path for subscription URLs",
         "type": "string"
       },
       "subPort": {
+        "description": "Subscription server port",
         "maximum": 65535,
         "minimum": 1,
         "type": "integer"
       },
-      "subProfileMode": {
-        "type": "string"
-      },
       "subProfileUrl": {
+        "description": "Subscription profile URL",
         "type": "string"
       },
       "subRoutingRules": {
+        "description": "Subscription global routing rules (Only for Happ)",
         "type": "string"
       },
-      "subShowIdentityOnAllLinks": {
-        "type": "boolean"
-      },
       "subSupportUrl": {
+        "description": "Subscription support URL",
         "type": "string"
       },
       "subThemeDir": {
         "type": "string"
       },
       "subTitle": {
-        "type": "string"
-      },
-      "subTrafficDepletedTemplate": {
+        "description": "Subscription title",
         "type": "string"
       },
       "subURI": {
+        "description": "Subscription server URI",
         "type": "string"
       },
       "subUpdates": {
+        "description": "Subscription update interval in minutes",
         "maximum": 525600,
         "minimum": 0,
         "type": "integer"
@@ -482,21 +350,9 @@ export const SCHEMAS: Record<string, unknown> = {
     },
     "required": [
       "datepicker",
-      "discordAdminIds",
-      "discordBotBackup",
-      "discordBotEnable",
-      "discordBotToken",
-      "discordChannelId",
-      "discordCpu",
-      "discordEnabledEvents",
-      "discordLang",
-      "discordMemory",
-      "discordRunTime",
       "expireDiff",
       "externalTrafficInformEnable",
       "externalTrafficInformURI",
-      "happLinkEnable",
-      "ipLimitAllowlist",
       "ldapAutoCreate",
       "ldapAutoDelete",
       "ldapBaseDN",
@@ -518,10 +374,8 @@ export const SCHEMAS: Record<string, unknown> = {
       "ldapUserAttr",
       "ldapUserFilter",
       "ldapVlessField",
-      "outboundDownThreshold",
       "pageSize",
       "panelOutbound",
-      "realityScanCandidates",
       "remarkTemplate",
       "restartXrayOnClientDisable",
       "sessionMaxAge",
@@ -529,8 +383,6 @@ export const SCHEMAS: Record<string, unknown> = {
       "smtpEnable",
       "smtpEnabledEvents",
       "smtpEncryptionType",
-      "smtpFrom",
-      "smtpFromName",
       "smtpHost",
       "smtpMemory",
       "smtpPassword",
@@ -538,71 +390,35 @@ export const SCHEMAS: Record<string, unknown> = {
       "smtpTo",
       "smtpUsername",
       "subAnnounce",
-      "subCalendarExpireInclusive",
       "subCertFile",
-      "subClashAutoDetect",
       "subClashEnable",
       "subClashEnableRouting",
       "subClashPath",
       "subClashRules",
       "subClashURI",
-      "subClashUserAgentRegex",
+      "subClientImportFormat",
       "subDomain",
       "subEnable",
       "subEnableRouting",
       "subEncrypt",
-      "subExpiredTemplate",
-      "subHappAlwaysHwid",
-      "subHappAutoConnect",
-      "subHappAutoConnectType",
-      "subHappAutoDetect",
-      "subHappColorProfile",
-      "subHappExcludeApns",
-      "subHappExcludeRoutes",
-      "subHappFallbackUrl",
-      "subHappNewUrl",
-      "subHappNoLimit",
-      "subHappNotificationExpire",
-      "subHappPerAppList",
-      "subHappPerAppMode",
-      "subHappPingType",
-      "subHappProviderId",
-      "subHappSubExpire",
-      "subHappSubExpireButtonLink",
-      "subHappSubInfoButtonLink",
-      "subHappSubInfoButtonText",
-      "subHappSubInfoColor",
-      "subHappSubInfoText",
-      "subHappTunMode",
-      "subHappTunType",
       "subHideSettings",
       "subIncyEnableRouting",
       "subIncyRoutingRules",
-      "subInfoNodeEnable",
-      "subJsonAlwaysArray",
-      "subJsonAutoDetect",
-      "subJsonDns",
       "subJsonEnable",
       "subJsonFinalMask",
       "subJsonMux",
-      "subJsonObservatory",
       "subJsonPath",
-      "subJsonRoutingRules",
       "subJsonRules",
       "subJsonURI",
-      "subJsonUserAgentRegex",
       "subKeyFile",
       "subListen",
       "subPath",
       "subPort",
-      "subProfileMode",
       "subProfileUrl",
       "subRoutingRules",
-      "subShowIdentityOnAllLinks",
       "subSupportUrl",
       "subThemeDir",
       "subTitle",
-      "subTrafficDepletedTemplate",
       "subURI",
       "subUpdates",
       "tgBotAPIServer",
@@ -636,57 +452,19 @@ export const SCHEMAS: Record<string, unknown> = {
       "datepicker": {
         "type": "string"
       },
-      "discordAdminIds": {
-        "type": "string"
-      },
-      "discordBotBackup": {
-        "type": "boolean"
-      },
-      "discordBotEnable": {
-        "type": "boolean"
-      },
-      "discordBotToken": {
-        "type": "string"
-      },
-      "discordChannelId": {
-        "type": "string"
-      },
-      "discordCpu": {
-        "maximum": 100,
-        "minimum": 0,
-        "type": "integer"
-      },
-      "discordEnabledEvents": {
-        "type": "string"
-      },
-      "discordLang": {
-        "type": "string"
-      },
-      "discordMemory": {
-        "maximum": 100,
-        "minimum": 0,
-        "type": "integer"
-      },
-      "discordRunTime": {
-        "type": "string"
-      },
       "expireDiff": {
         "minimum": 0,
         "type": "integer"
       },
       "externalTrafficInformEnable": {
+        "description": "Enable external traffic reporting",
         "type": "boolean"
       },
       "externalTrafficInformURI": {
+        "description": "URI for external traffic reporting",
         "type": "string"
       },
-      "happLinkEnable": {
-        "type": "boolean"
-      },
       "hasApiToken": {
-        "type": "boolean"
-      },
-      "hasDiscordBotToken": {
         "type": "boolean"
       },
       "hasLdapPassword": {
@@ -706,9 +484,6 @@ export const SCHEMAS: Record<string, unknown> = {
       },
       "hasWarpSecret": {
         "type": "boolean"
-      },
-      "ipLimitAllowlist": {
-        "type": "string"
       },
       "ldapAutoCreate": {
         "type": "boolean"
@@ -778,11 +553,6 @@ export const SCHEMAS: Record<string, unknown> = {
       "ldapVlessField": {
         "type": "string"
       },
-      "outboundDownThreshold": {
-        "maximum": 100,
-        "minimum": 1,
-        "type": "integer"
-      },
       "pageSize": {
         "maximum": 1000,
         "minimum": 0,
@@ -791,13 +561,11 @@ export const SCHEMAS: Record<string, unknown> = {
       "panelOutbound": {
         "type": "string"
       },
-      "realityScanCandidates": {
-        "type": "string"
-      },
       "remarkTemplate": {
         "type": "string"
       },
       "restartXrayOnClientDisable": {
+        "description": "Restart Xray when clients are auto-disabled by expiry/traffic limit",
         "type": "boolean"
       },
       "sessionMaxAge": {
@@ -817,12 +585,6 @@ export const SCHEMAS: Record<string, unknown> = {
         "type": "string"
       },
       "smtpEncryptionType": {
-        "type": "string"
-      },
-      "smtpFrom": {
-        "type": "string"
-      },
-      "smtpFromName": {
         "type": "string"
       },
       "smtpHost": {
@@ -848,210 +610,129 @@ export const SCHEMAS: Record<string, unknown> = {
         "type": "string"
       },
       "subAnnounce": {
+        "description": "Subscription announce",
         "type": "string"
-      },
-      "subCalendarExpireInclusive": {
-        "type": "boolean"
       },
       "subCertFile": {
+        "description": "SSL certificate file for subscription server",
         "type": "string"
       },
-      "subClashAutoDetect": {
-        "type": "boolean"
-      },
       "subClashEnable": {
+        "description": "Enable Clash/Mihomo subscription endpoint",
         "type": "boolean"
       },
       "subClashEnableRouting": {
+        "description": "Enable global routing rules for Clash/Mihomo",
         "type": "boolean"
       },
       "subClashPath": {
+        "description": "Path for Clash/Mihomo subscription endpoint",
         "type": "string"
       },
       "subClashRules": {
+        "description": "Clash/Mihomo global routing rules",
         "type": "string"
       },
       "subClashURI": {
+        "description": "Clash/Mihomo subscription server URI",
         "type": "string"
       },
-      "subClashUserAgentRegex": {
+      "subClientImportFormat": {
+        "description": "Default non-HTML /sub import format: normal or json",
         "type": "string"
       },
       "subDomain": {
+        "description": "Domain for subscription server validation",
         "type": "string"
       },
       "subEnable": {
+        "description": "Subscription server settings\nEnable subscription server",
         "type": "boolean"
       },
       "subEnableRouting": {
+        "description": "Enable routing for subscription",
         "type": "boolean"
       },
       "subEncrypt": {
+        "description": "Encrypt subscription responses",
         "type": "boolean"
-      },
-      "subExpiredTemplate": {
-        "type": "string"
-      },
-      "subHappAlwaysHwid": {
-        "type": "boolean"
-      },
-      "subHappAutoConnect": {
-        "type": "boolean"
-      },
-      "subHappAutoConnectType": {
-        "type": "string"
-      },
-      "subHappAutoDetect": {
-        "description": "Happ client customization settings (app-management / routing / UX).",
-        "type": "boolean"
-      },
-      "subHappColorProfile": {
-        "type": "string"
-      },
-      "subHappExcludeApns": {
-        "type": "boolean"
-      },
-      "subHappExcludeRoutes": {
-        "type": "string"
-      },
-      "subHappFallbackUrl": {
-        "type": "string"
-      },
-      "subHappNewUrl": {
-        "type": "string"
-      },
-      "subHappNoLimit": {
-        "type": "boolean"
-      },
-      "subHappNotificationExpire": {
-        "type": "boolean"
-      },
-      "subHappPerAppList": {
-        "type": "string"
-      },
-      "subHappPerAppMode": {
-        "type": "string"
-      },
-      "subHappPingType": {
-        "type": "string"
-      },
-      "subHappProviderId": {
-        "type": "string"
-      },
-      "subHappSubExpire": {
-        "type": "boolean"
-      },
-      "subHappSubExpireButtonLink": {
-        "type": "string"
-      },
-      "subHappSubInfoButtonLink": {
-        "type": "string"
-      },
-      "subHappSubInfoButtonText": {
-        "type": "string"
-      },
-      "subHappSubInfoColor": {
-        "type": "string"
-      },
-      "subHappSubInfoText": {
-        "type": "string"
-      },
-      "subHappTunMode": {
-        "type": "string"
-      },
-      "subHappTunType": {
-        "type": "string"
       },
       "subHideSettings": {
         "type": "boolean"
       },
       "subIncyEnableRouting": {
+        "description": "Enable routing injection for the Incy client",
         "type": "boolean"
       },
       "subIncyRoutingRules": {
-        "type": "string"
-      },
-      "subInfoNodeEnable": {
-        "type": "boolean"
-      },
-      "subJsonAlwaysArray": {
-        "type": "boolean"
-      },
-      "subJsonAutoDetect": {
-        "type": "boolean"
-      },
-      "subJsonDns": {
+        "description": "Incy routing deep-link injected into the subscription body (Only for Incy)",
         "type": "string"
       },
       "subJsonEnable": {
+        "description": "Enable JSON subscription endpoint",
         "type": "boolean"
       },
       "subJsonFinalMask": {
         "type": "string"
       },
       "subJsonMux": {
-        "type": "string"
-      },
-      "subJsonObservatory": {
+        "description": "JSON subscription mux configuration",
         "type": "string"
       },
       "subJsonPath": {
-        "type": "string"
-      },
-      "subJsonRoutingRules": {
+        "description": "Path for JSON subscription endpoint",
         "type": "string"
       },
       "subJsonRules": {
         "type": "string"
       },
       "subJsonURI": {
-        "type": "string"
-      },
-      "subJsonUserAgentRegex": {
+        "description": "JSON subscription server URI",
         "type": "string"
       },
       "subKeyFile": {
+        "description": "SSL private key file for subscription server",
         "type": "string"
       },
       "subListen": {
+        "description": "Subscription server listen IP",
         "type": "string"
       },
       "subPath": {
+        "description": "Base path for subscription URLs",
         "type": "string"
       },
       "subPort": {
+        "description": "Subscription server port",
         "maximum": 65535,
         "minimum": 1,
         "type": "integer"
       },
-      "subProfileMode": {
-        "type": "string"
-      },
       "subProfileUrl": {
+        "description": "Subscription profile URL",
         "type": "string"
       },
       "subRoutingRules": {
+        "description": "Subscription global routing rules (Only for Happ)",
         "type": "string"
       },
-      "subShowIdentityOnAllLinks": {
-        "type": "boolean"
-      },
       "subSupportUrl": {
+        "description": "Subscription support URL",
         "type": "string"
       },
       "subThemeDir": {
         "type": "string"
       },
       "subTitle": {
-        "type": "string"
-      },
-      "subTrafficDepletedTemplate": {
+        "description": "Subscription title",
         "type": "string"
       },
       "subURI": {
+        "description": "Subscription server URI",
         "type": "string"
       },
       "subUpdates": {
+        "description": "Subscription update interval in minutes",
         "maximum": 525600,
         "minimum": 0,
         "type": "integer"
@@ -1137,29 +818,16 @@ export const SCHEMAS: Record<string, unknown> = {
     },
     "required": [
       "datepicker",
-      "discordAdminIds",
-      "discordBotBackup",
-      "discordBotEnable",
-      "discordBotToken",
-      "discordChannelId",
-      "discordCpu",
-      "discordEnabledEvents",
-      "discordLang",
-      "discordMemory",
-      "discordRunTime",
       "expireDiff",
       "externalTrafficInformEnable",
       "externalTrafficInformURI",
-      "happLinkEnable",
       "hasApiToken",
-      "hasDiscordBotToken",
       "hasLdapPassword",
       "hasNordSecret",
       "hasSmtpPassword",
       "hasTgBotToken",
       "hasTwoFactorToken",
       "hasWarpSecret",
-      "ipLimitAllowlist",
       "ldapAutoCreate",
       "ldapAutoDelete",
       "ldapBaseDN",
@@ -1181,10 +849,8 @@ export const SCHEMAS: Record<string, unknown> = {
       "ldapUserAttr",
       "ldapUserFilter",
       "ldapVlessField",
-      "outboundDownThreshold",
       "pageSize",
       "panelOutbound",
-      "realityScanCandidates",
       "remarkTemplate",
       "restartXrayOnClientDisable",
       "sessionMaxAge",
@@ -1192,8 +858,6 @@ export const SCHEMAS: Record<string, unknown> = {
       "smtpEnable",
       "smtpEnabledEvents",
       "smtpEncryptionType",
-      "smtpFrom",
-      "smtpFromName",
       "smtpHost",
       "smtpMemory",
       "smtpPassword",
@@ -1201,71 +865,35 @@ export const SCHEMAS: Record<string, unknown> = {
       "smtpTo",
       "smtpUsername",
       "subAnnounce",
-      "subCalendarExpireInclusive",
       "subCertFile",
-      "subClashAutoDetect",
       "subClashEnable",
       "subClashEnableRouting",
       "subClashPath",
       "subClashRules",
       "subClashURI",
-      "subClashUserAgentRegex",
+      "subClientImportFormat",
       "subDomain",
       "subEnable",
       "subEnableRouting",
       "subEncrypt",
-      "subExpiredTemplate",
-      "subHappAlwaysHwid",
-      "subHappAutoConnect",
-      "subHappAutoConnectType",
-      "subHappAutoDetect",
-      "subHappColorProfile",
-      "subHappExcludeApns",
-      "subHappExcludeRoutes",
-      "subHappFallbackUrl",
-      "subHappNewUrl",
-      "subHappNoLimit",
-      "subHappNotificationExpire",
-      "subHappPerAppList",
-      "subHappPerAppMode",
-      "subHappPingType",
-      "subHappProviderId",
-      "subHappSubExpire",
-      "subHappSubExpireButtonLink",
-      "subHappSubInfoButtonLink",
-      "subHappSubInfoButtonText",
-      "subHappSubInfoColor",
-      "subHappSubInfoText",
-      "subHappTunMode",
-      "subHappTunType",
       "subHideSettings",
       "subIncyEnableRouting",
       "subIncyRoutingRules",
-      "subInfoNodeEnable",
-      "subJsonAlwaysArray",
-      "subJsonAutoDetect",
-      "subJsonDns",
       "subJsonEnable",
       "subJsonFinalMask",
       "subJsonMux",
-      "subJsonObservatory",
       "subJsonPath",
-      "subJsonRoutingRules",
       "subJsonRules",
       "subJsonURI",
-      "subJsonUserAgentRegex",
       "subKeyFile",
       "subListen",
       "subPath",
       "subPort",
-      "subProfileMode",
       "subProfileUrl",
       "subRoutingRules",
-      "subShowIdentityOnAllLinks",
       "subSupportUrl",
       "subThemeDir",
       "subTitle",
-      "subTrafficDepletedTemplate",
       "subURI",
       "subUpdates",
       "tgBotAPIServer",
@@ -1294,40 +922,14 @@ export const SCHEMAS: Record<string, unknown> = {
     ],
     "type": "object"
   },
-  "AmneziaWGLogs": {
-    "description": "AmneziaWGLogs is what the overview's AmneziaWG log view renders: the live\nper-peer activity of every running embedded interface, plus the panel's\nown recent AmneziaWG lifecycle log lines that explain a peer being absent\nfrom Peers at all.",
-    "properties": {
-      "events": {
-        "example": [
-          "2025/01/01 12:00:00 amneziawg: started interface awg1 for inbound 1"
-        ],
-        "items": {
-          "type": "string"
-        },
-        "type": "array"
-      },
-      "peers": {
-        "items": {
-          "$ref": "#/components/schemas/PeerActivity"
-        },
-        "type": "array"
-      },
-      "running": {
-        "example": true,
-        "type": "boolean"
-      }
-    },
-    "required": [
-      "events",
-      "peers",
-      "running"
-    ],
-    "type": "object"
-  },
   "ApiToken": {
     "properties": {
       "createdAt": {
         "format": "int64",
+        "type": "integer"
+      },
+      "createdByAdminId": {
+        "nullable": true,
         "type": "integer"
       },
       "enabled": {
@@ -1340,15 +942,15 @@ export const SCHEMAS: Record<string, unknown> = {
       "id": {
         "type": "integer"
       },
+      "kind": {
+        "type": "string"
+      },
       "name": {
         "type": "string"
       },
-      "scope": {
-        "type": "string"
-      },
-      "token": {
-        "description": "SHA-256 hash; the plaintext is shown only once at creation",
-        "type": "string"
+      "subjectAdminId": {
+        "nullable": true,
+        "type": "integer"
       }
     },
     "required": [
@@ -1356,9 +958,8 @@ export const SCHEMAS: Record<string, unknown> = {
       "enabled",
       "expiresAt",
       "id",
-      "name",
-      "scope",
-      "token"
+      "kind",
+      "name"
     ],
     "type": "object"
   },
@@ -1369,12 +970,21 @@ export const SCHEMAS: Record<string, unknown> = {
         "format": "int64",
         "type": "integer"
       },
+      "createdByAdminId": {
+        "example": 1,
+        "nullable": true,
+        "type": "integer"
+      },
       "enabled": {
         "example": true,
         "type": "boolean"
       },
+      "expired": {
+        "example": false,
+        "type": "boolean"
+      },
       "expiresAt": {
-        "example": 0,
+        "example": 1767536000,
         "format": "int64",
         "type": "integer"
       },
@@ -1382,26 +992,51 @@ export const SCHEMAS: Record<string, unknown> = {
         "example": 2,
         "type": "integer"
       },
-      "name": {
-        "example": "central-panel-a",
+      "kind": {
+        "example": "delegated",
         "type": "string"
       },
-      "scope": {
-        "example": "admin",
+      "name": {
+        "example": "telegram-bot-a",
+        "type": "string"
+      },
+      "scopes": {
+        "example": [
+          "clients:read",
+          "clients:create"
+        ],
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      },
+      "subjectAdminId": {
+        "example": 3,
+        "nullable": true,
+        "type": "integer"
+      },
+      "subjectRoleName": {
+        "example": "Operator",
+        "type": "string"
+      },
+      "subjectUsername": {
+        "example": "operator-a",
         "type": "string"
       },
       "token": {
-        "example": "new-token-string",
+        "example": "hmd_d_new-token-string",
         "type": "string"
       }
     },
     "required": [
       "createdAt",
       "enabled",
+      "expired",
       "expiresAt",
       "id",
+      "kind",
       "name",
-      "scope"
+      "scopes"
     ],
     "type": "object"
   },
@@ -1413,23 +1048,18 @@ export const SCHEMAS: Record<string, unknown> = {
         "type": "string"
       },
       "allowedIPs": {
+        "description": "WireGuard allowed IPs",
         "items": {
           "type": "string"
         },
         "type": "array"
       },
-      "allowedIPsByInbound": {
-        "additionalProperties": {
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
-        "description": "AllowedIPsByInbound optionally overrides AllowedIPs on a per-inbound\nbasis, keyed by inbound id. Lets one identity attached to both\nWireGuard and AmneziaWG carry two genuinely different addresses in a\nsingle Create/Update call instead of the shared AllowedIPs field\nbeing broadcast to every attached tunnel inbound. Absent/unset for a\ngiven inbound id falls back to the shared AllowedIPs exactly as\nbefore -- fully backward compatible for callers that never set this.",
-        "type": "object"
-      },
       "auth": {
-        "description": "Auth password (Hysteria)",
+        "description": "Authentication password",
+        "type": "string"
+      },
+      "clientGuid": {
+        "description": "Stable logical-client identity; independent of protocol credentials/email",
         "type": "string"
       },
       "comment": {
@@ -1439,6 +1069,10 @@ export const SCHEMAS: Record<string, unknown> = {
       "created_at": {
         "description": "Creation timestamp",
         "format": "int64",
+        "type": "integer"
+      },
+      "downloadMbps": {
+        "description": "Aggregate download limit in Mbps; 0 means unlimited",
         "type": "integer"
       },
       "email": {
@@ -1455,11 +1089,7 @@ export const SCHEMAS: Record<string, unknown> = {
         "type": "integer"
       },
       "flow": {
-        "description": "Flow control (XTLS)",
-        "type": "string"
-      },
-      "forwardedPorts": {
-        "description": "AmneziaWG per-client port-forwarding spec, e.g. \"80,443,8000-8100\"",
+        "description": "Flow control",
         "type": "string"
       },
       "group": {
@@ -1471,12 +1101,11 @@ export const SCHEMAS: Record<string, unknown> = {
         "type": "string"
       },
       "keepAlive": {
-        "description": "Seconds between PersistentKeepalive packets; 0 sends none, omit to keep the stored value",
-        "nullable": true,
+        "description": "WireGuard persistent keepalive",
         "type": "integer"
       },
       "limitIp": {
-        "description": "IP limit for this client",
+        "description": "Concurrent IP limit; 0 means unlimited",
         "type": "integer"
       },
       "password": {
@@ -1484,24 +1113,19 @@ export const SCHEMAS: Record<string, unknown> = {
         "type": "string"
       },
       "preSharedKey": {
+        "description": "WireGuard pre-shared key",
         "type": "string"
       },
       "privateKey": {
+        "description": "WireGuard private key",
         "type": "string"
       },
       "publicKey": {
+        "description": "WireGuard public key",
         "type": "string"
       },
       "reset": {
         "description": "Reset period in days",
-        "type": "integer"
-      },
-      "resetDay": {
-        "description": "Calendar renewal day 1-31, 0 = interval mode",
-        "type": "integer"
-      },
-      "resetMax": {
-        "description": "Max auto-renew count, 0 = unlimited",
         "type": "integer"
       },
       "reverse": {
@@ -1510,7 +1134,7 @@ export const SCHEMAS: Record<string, unknown> = {
             "$ref": "#/components/schemas/ClientReverse"
           }
         ],
-        "description": "VLESS simple reverse proxy settings",
+        "description": "Reverse proxy settings",
         "nullable": true
       },
       "secret": {
@@ -1518,7 +1142,7 @@ export const SCHEMAS: Record<string, unknown> = {
         "type": "string"
       },
       "security": {
-        "description": "Security method (e.g., \"auto\", \"aes-128-gcm\")",
+        "description": "Security method",
         "type": "string"
       },
       "subId": {
@@ -1535,41 +1159,29 @@ export const SCHEMAS: Record<string, unknown> = {
         "format": "int64",
         "type": "integer"
       },
-      "trafficReset": {
-        "description": "Per-client traffic reset cycle, independent of the inbound's own (#5497).",
-        "enum": [
-          "never",
-          "hourly",
-          "daily",
-          "weekly",
-          "monthly"
-        ],
-        "type": "string"
-      },
-      "trafficResetDay": {
-        "maximum": 31,
-        "minimum": 1,
-        "type": "integer"
-      },
       "updated_at": {
         "description": "Last update timestamp",
         "format": "int64",
+        "type": "integer"
+      },
+      "uploadMbps": {
+        "description": "Aggregate upload limit in Mbps; 0 means unlimited",
         "type": "integer"
       }
     },
     "required": [
       "comment",
+      "downloadMbps",
       "email",
       "enable",
       "expiryTime",
       "limitIp",
       "reset",
-      "resetDay",
-      "resetMax",
       "security",
       "subId",
       "tgId",
-      "totalGB"
+      "totalGB",
+      "uploadMbps"
     ],
     "type": "object"
   },
@@ -1597,56 +1209,6 @@ export const SCHEMAS: Record<string, unknown> = {
     ],
     "type": "object"
   },
-  "ClientPageResponse": {
-    "description": "ClientPageResponse is the shape returned by ListPaged. `Total` is the\nrow count in the DB; `Filtered` is the count after Search/Filter/Protocol\nwere applied, before pagination. The page contains at most PageSize items.\nSummary is computed across the full DB row set so dashboard counters\non the clients page stay stable as the user paginates/filters.",
-    "properties": {
-      "filtered": {
-        "example": 47,
-        "type": "integer"
-      },
-      "groups": {
-        "example": [
-          "staff",
-          "trial"
-        ],
-        "items": {
-          "type": "string"
-        },
-        "type": "array"
-      },
-      "items": {
-        "items": {
-          "$ref": "#/components/schemas/ClientSlim"
-        },
-        "type": "array"
-      },
-      "page": {
-        "example": 1,
-        "type": "integer"
-      },
-      "pageSize": {
-        "example": 25,
-        "type": "integer"
-      },
-      "summary": {
-        "$ref": "#/components/schemas/ClientsSummary"
-      },
-      "total": {
-        "example": 2000,
-        "type": "integer"
-      }
-    },
-    "required": [
-      "filtered",
-      "groups",
-      "items",
-      "page",
-      "pageSize",
-      "summary",
-      "total"
-    ],
-    "type": "object"
-  },
   "ClientRecord": {
     "properties": {
       "adTag": {
@@ -1658,11 +1220,23 @@ export const SCHEMAS: Record<string, unknown> = {
       "auth": {
         "type": "string"
       },
+      "clientGuid": {
+        "type": "string"
+      },
       "comment": {
         "type": "string"
       },
       "createdAt": {
         "format": "int64",
+        "type": "integer"
+      },
+      "createdByAdminId": {
+        "type": "integer"
+      },
+      "disabledByOwnerAdminId": {
+        "type": "integer"
+      },
+      "downloadMbps": {
         "type": "integer"
       },
       "email": {
@@ -1678,9 +1252,6 @@ export const SCHEMAS: Record<string, unknown> = {
       "flow": {
         "type": "string"
       },
-      "forwardedPorts": {
-        "type": "string"
-      },
       "group": {
         "type": "string"
       },
@@ -1690,10 +1261,10 @@ export const SCHEMAS: Record<string, unknown> = {
       "keepAlive": {
         "type": "integer"
       },
-      "limitHwid": {
+      "limitIp": {
         "type": "integer"
       },
-      "limitIp": {
+      "ownerAdminId": {
         "type": "integer"
       },
       "password": {
@@ -1709,12 +1280,6 @@ export const SCHEMAS: Record<string, unknown> = {
         "type": "string"
       },
       "reset": {
-        "type": "integer"
-      },
-      "resetDay": {
-        "type": "integer"
-      },
-      "resetMax": {
         "type": "integer"
       },
       "reverse": {},
@@ -1735,14 +1300,11 @@ export const SCHEMAS: Record<string, unknown> = {
         "format": "int64",
         "type": "integer"
       },
-      "trafficReset": {
-        "type": "string"
-      },
-      "trafficResetDay": {
-        "type": "integer"
-      },
       "updatedAt": {
         "format": "int64",
+        "type": "integer"
+      },
+      "uploadMbps": {
         "type": "integer"
       },
       "uuid": {
@@ -1753,34 +1315,34 @@ export const SCHEMAS: Record<string, unknown> = {
       "adTag",
       "allowedIPs",
       "auth",
+      "clientGuid",
       "comment",
       "createdAt",
+      "createdByAdminId",
+      "disabledByOwnerAdminId",
+      "downloadMbps",
       "email",
       "enable",
       "expiryTime",
       "flow",
-      "forwardedPorts",
       "group",
       "id",
       "keepAlive",
-      "limitHwid",
       "limitIp",
+      "ownerAdminId",
       "password",
       "preSharedKey",
       "privateKey",
       "publicKey",
       "reset",
-      "resetDay",
-      "resetMax",
       "reverse",
       "secret",
       "security",
       "subId",
       "tgId",
       "totalGB",
-      "trafficReset",
-      "trafficResetDay",
       "updatedAt",
+      "uploadMbps",
       "uuid"
     ],
     "type": "object"
@@ -1793,105 +1355,6 @@ export const SCHEMAS: Record<string, unknown> = {
     },
     "required": [
       "tag"
-    ],
-    "type": "object"
-  },
-  "ClientSlim": {
-    "description": "ClientSlim is the row-shape used by the clients page. It drops fields the\ntable never reads (UUID, password, auth, flow, security, reverse, tgId)\nso the list payload stays compact even when the panel manages thousands\nof clients. Modals that need the full record still call /get/:email.",
-    "properties": {
-      "comment": {
-        "example": "Primary device",
-        "type": "string"
-      },
-      "createdAt": {
-        "example": 1735000000000,
-        "format": "int64",
-        "type": "integer"
-      },
-      "email": {
-        "example": "alice@example.com",
-        "type": "string"
-      },
-      "enable": {
-        "example": true,
-        "type": "boolean"
-      },
-      "expiryTime": {
-        "example": 1735689600000,
-        "format": "int64",
-        "type": "integer"
-      },
-      "group": {
-        "example": "staff",
-        "type": "string"
-      },
-      "inboundIds": {
-        "example": [
-          3,
-          5
-        ],
-        "items": {
-          "type": "integer"
-        },
-        "type": "array"
-      },
-      "limitHwid": {
-        "example": 0,
-        "type": "integer"
-      },
-      "limitIp": {
-        "example": 0,
-        "type": "integer"
-      },
-      "reset": {
-        "example": 0,
-        "type": "integer"
-      },
-      "resetDay": {
-        "example": 0,
-        "type": "integer"
-      },
-      "resetMax": {
-        "example": 0,
-        "type": "integer"
-      },
-      "subId": {
-        "example": "abcd1234",
-        "type": "string"
-      },
-      "totalGB": {
-        "example": 53687091200,
-        "format": "int64",
-        "type": "integer"
-      },
-      "traffic": {
-        "allOf": [
-          {
-            "$ref": "#/components/schemas/ClientTraffic"
-          }
-        ],
-        "nullable": true
-      },
-      "updatedAt": {
-        "example": 1735100000000,
-        "format": "int64",
-        "type": "integer"
-      }
-    },
-    "required": [
-      "createdAt",
-      "email",
-      "enable",
-      "expiryTime",
-      "inboundIds",
-      "limitHwid",
-      "limitIp",
-      "reset",
-      "resetDay",
-      "resetMax",
-      "subId",
-      "totalGB",
-      "updatedAt"
     ],
     "type": "object"
   },
@@ -1929,27 +1392,7 @@ export const SCHEMAS: Record<string, unknown> = {
         "format": "int64",
         "type": "integer"
       },
-      "lastSubFetch": {
-        "example": 1735680000000,
-        "format": "int64",
-        "type": "integer"
-      },
       "reset": {
-        "example": 0,
-        "type": "integer"
-      },
-      "resetCount": {
-        "description": "ResetCount is how many have fired, so a prepaid plan stops on its own.",
-        "example": 0,
-        "type": "integer"
-      },
-      "resetDay": {
-        "description": "ResetDay renews on that day of each calendar month instead of every\nReset days; 0 keeps the interval behaviour.",
-        "example": 0,
-        "type": "integer"
-      },
-      "resetMax": {
-        "description": "ResetMax caps how many times auto-renew may fire; 0 means no cap.",
         "example": 0,
         "type": "integer"
       },
@@ -1980,89 +1423,11 @@ export const SCHEMAS: Record<string, unknown> = {
       "id",
       "inboundId",
       "lastOnline",
-      "lastSubFetch",
       "reset",
-      "resetCount",
-      "resetDay",
-      "resetMax",
       "subId",
       "total",
       "up",
       "uuid"
-    ],
-    "type": "object"
-  },
-  "ClientsSummary": {
-    "description": "ClientsSummary collects per-bucket counts plus the matching email lists so\nthe clients page can render the dashboard stat cards and their hover\npopovers without shipping the full client array. The counters are exact;\nthe lists stop at clientSummaryEmailCap entries and only back the popovers.",
-    "properties": {
-      "active": {
-        "example": 1850,
-        "type": "integer"
-      },
-      "deactive": {
-        "example": [
-          "bob@example.com"
-        ],
-        "items": {
-          "type": "string"
-        },
-        "type": "array"
-      },
-      "deactiveCount": {
-        "example": 150,
-        "type": "integer"
-      },
-      "depleted": {
-        "example": [],
-        "items": {
-          "type": "string"
-        },
-        "type": "array"
-      },
-      "depletedCount": {
-        "example": 0,
-        "type": "integer"
-      },
-      "expiring": {
-        "example": [],
-        "items": {
-          "type": "string"
-        },
-        "type": "array"
-      },
-      "expiringCount": {
-        "example": 0,
-        "type": "integer"
-      },
-      "online": {
-        "example": [
-          "alice@example.com"
-        ],
-        "items": {
-          "type": "string"
-        },
-        "type": "array"
-      },
-      "onlineCount": {
-        "example": 1,
-        "type": "integer"
-      },
-      "total": {
-        "example": 2000,
-        "type": "integer"
-      }
-    },
-    "required": [
-      "active",
-      "deactive",
-      "deactiveCount",
-      "depleted",
-      "depletedCount",
-      "expiring",
-      "expiringCount",
-      "online",
-      "onlineCount",
-      "total"
     ],
     "type": "object"
   },
@@ -2078,169 +1443,6 @@ export const SCHEMAS: Record<string, unknown> = {
     },
     "required": [
       "masterId"
-    ],
-    "type": "object"
-  },
-  "GeoCategory": {
-    "description": "GeoCategory is one code inside a database, such as geosite's \"google\".",
-    "properties": {
-      "attributes": {
-        "example": [
-          "ads",
-          "cn"
-        ],
-        "items": {
-          "type": "string"
-        },
-        "type": "array"
-      },
-      "code": {
-        "example": "google",
-        "type": "string"
-      },
-      "entries": {
-        "example": 1284,
-        "type": "integer"
-      }
-    },
-    "required": [
-      "attributes",
-      "code",
-      "entries"
-    ],
-    "type": "object"
-  },
-  "GeoCategoryPage": {
-    "description": "GeoCategoryPage is one page of categories plus the unpaged total.",
-    "properties": {
-      "items": {
-        "items": {
-          "$ref": "#/components/schemas/GeoCategory"
-        },
-        "type": "array"
-      },
-      "total": {
-        "example": 1043,
-        "type": "integer"
-      }
-    },
-    "required": [
-      "items",
-      "total"
-    ],
-    "type": "object"
-  },
-  "GeoEntry": {
-    "description": "GeoEntry is a single rule inside a category: a domain rule for geosite\ndatabases, a CIDR for geoip ones.",
-    "properties": {
-      "kind": {
-        "example": "domain",
-        "type": "string"
-      },
-      "value": {
-        "example": "google.com",
-        "type": "string"
-      }
-    },
-    "required": [
-      "kind",
-      "value"
-    ],
-    "type": "object"
-  },
-  "GeoEntryPage": {
-    "description": "GeoEntryPage is one page of category entries plus the unpaged total.",
-    "properties": {
-      "items": {
-        "items": {
-          "$ref": "#/components/schemas/GeoEntry"
-        },
-        "type": "array"
-      },
-      "total": {
-        "example": 1284,
-        "type": "integer"
-      }
-    },
-    "required": [
-      "items",
-      "total"
-    ],
-    "type": "object"
-  },
-  "GeoFile": {
-    "description": "GeoFile describes one .dat database found in the asset directory.",
-    "properties": {
-      "categories": {
-        "example": 1043,
-        "type": "integer"
-      },
-      "error": {
-        "type": "string"
-      },
-      "kind": {
-        "example": "site",
-        "type": "string"
-      },
-      "modifiedAt": {
-        "example": 1769558400000,
-        "format": "int64",
-        "type": "integer"
-      },
-      "name": {
-        "example": "geosite.dat",
-        "type": "string"
-      },
-      "size": {
-        "example": 1467392,
-        "format": "int64",
-        "type": "integer"
-      }
-    },
-    "required": [
-      "categories",
-      "kind",
-      "modifiedAt",
-      "name",
-      "size"
-    ],
-    "type": "object"
-  },
-  "GeodataTokenIssue": {
-    "description": "GeodataTokenIssue reports a routing token the running core would reject,\nor would silently match nothing against.",
-    "properties": {
-      "code": {
-        "example": "blabla",
-        "type": "string"
-      },
-      "file": {
-        "example": "geosite.dat",
-        "type": "string"
-      },
-      "reason": {
-        "example": "categoryMissing",
-        "type": "string"
-      },
-      "token": {
-        "example": "geosite:blabla",
-        "type": "string"
-      }
-    },
-    "required": [
-      "reason",
-      "token"
-    ],
-    "type": "object"
-  },
-  "HappLinkResult": {
-    "properties": {
-      "encryptedLink": {
-        "example": "happ://crypt5/example",
-        "type": "string"
-      }
-    },
-    "required": [
-      "encryptedLink"
     ],
     "type": "object"
   },
@@ -2274,9 +1476,6 @@ export const SCHEMAS: Record<string, unknown> = {
           "type": "string"
         },
         "type": "array"
-      },
-      "cipherSuites": {
-        "type": "string"
       },
       "createdAt": {
         "format": "int64",
@@ -2411,7 +1610,6 @@ export const SCHEMAS: Record<string, unknown> = {
       "address",
       "allowInsecure",
       "alpn",
-      "cipherSuites",
       "createdAt",
       "echConfigList",
       "excludeFromSubTypes",
@@ -2455,9 +1653,6 @@ export const SCHEMAS: Record<string, unknown> = {
           "type": "string"
         },
         "type": "array"
-      },
-      "cipherSuites": {
-        "type": "string"
       },
       "echConfigList": {
         "type": "string"
@@ -2585,7 +1780,6 @@ export const SCHEMAS: Record<string, unknown> = {
     "required": [
       "allowInsecure",
       "alpn",
-      "cipherSuites",
       "echConfigList",
       "excludeFromSubTypes",
       "finalMask",
@@ -2618,39 +1812,6 @@ export const SCHEMAS: Record<string, unknown> = {
     ],
     "type": "object"
   },
-  "HwidSlotStatus": {
-    "description": "HwidSlotStatus is the aggregate device-slot view exposed to subscribers:\ncounters only, no hwid value or hash, no email, no device metadata.",
-    "properties": {
-      "active": {
-        "example": true,
-        "type": "boolean"
-      },
-      "full": {
-        "example": false,
-        "type": "boolean"
-      },
-      "limit": {
-        "example": 2,
-        "type": "integer"
-      },
-      "registered": {
-        "example": 1,
-        "type": "integer"
-      },
-      "remaining": {
-        "example": 1,
-        "type": "integer"
-      }
-    },
-    "required": [
-      "active",
-      "full",
-      "limit",
-      "registered",
-      "remaining"
-    ],
-    "type": "object"
-  },
   "Inbound": {
     "description": "Inbound represents an Xray inbound configuration with traffic statistics and settings.",
     "properties": {
@@ -2660,10 +1821,6 @@ export const SCHEMAS: Record<string, unknown> = {
           "$ref": "#/components/schemas/ClientTraffic"
         },
         "type": "array"
-      },
-      "disableFlow": {
-        "example": false,
-        "type": "boolean"
       },
       "down": {
         "description": "Download traffic in bytes",
@@ -2729,9 +1886,7 @@ export const SCHEMAS: Record<string, unknown> = {
           "mixed",
           "tunnel",
           "tun",
-          "mtproto",
-          "amneziawg",
-          "tuic"
+          "mtproto"
         ],
         "example": "vless",
         "type": "string"
@@ -2756,8 +1911,9 @@ export const SCHEMAS: Record<string, unknown> = {
       "sniffing": {},
       "streamSettings": {},
       "subSortIndex": {
-        "description": "Sort order of this inbound's links in subscription output only (lower first; negatives allowed; 0/omitted → 1; ties by id)",
+        "description": "1-based sort order of this inbound's links in subscription output only (lower first; ties by id)",
         "example": 1,
+        "minimum": 1,
         "type": "integer"
       },
       "tag": {
@@ -2765,7 +1921,6 @@ export const SCHEMAS: Record<string, unknown> = {
         "type": "string"
       },
       "total": {
-        "description": "Total traffic limit in bytes",
         "format": "int64",
         "type": "integer"
       },
@@ -2780,22 +1935,19 @@ export const SCHEMAS: Record<string, unknown> = {
         ],
         "type": "string"
       },
-      "trafficResetDay": {
-        "description": "Day of month for monthly traffic resets",
-        "example": 1,
-        "maximum": 31,
-        "minimum": 1,
-        "type": "integer"
-      },
       "up": {
         "description": "Upload traffic in bytes",
         "format": "int64",
         "type": "integer"
+      },
+      "usageMultiplier": {
+        "description": "Billable usage multiplier; 1.00 means real usage",
+        "example": 1,
+        "type": "number"
       }
     },
     "required": [
       "clientStats",
-      "disableFlow",
       "down",
       "enable",
       "expiryTime",
@@ -2814,8 +1966,8 @@ export const SCHEMAS: Record<string, unknown> = {
       "tag",
       "total",
       "trafficReset",
-      "trafficResetDay",
-      "up"
+      "up",
+      "usageMultiplier"
     ],
     "type": "object"
   },
@@ -2882,15 +2034,6 @@ export const SCHEMAS: Record<string, unknown> = {
   },
   "InboundOption": {
     "properties": {
-      "awgServer": {
-        "allOf": [
-          {
-            "$ref": "#/components/schemas/ServerSettings"
-          }
-        ],
-        "description": "AwgServer carries the full AmneziaWG server block (keys, subnet,\nobfuscation params) so the clients page can render a downloadable\nper-client .conf without a second round trip.",
-        "nullable": true
-      },
       "enable": {
         "example": true,
         "type": "boolean"
@@ -2903,9 +2046,6 @@ export const SCHEMAS: Record<string, unknown> = {
         "type": "string"
       },
       "mtprotoDomain": {
-        "type": "string"
-      },
-      "network": {
         "type": "string"
       },
       "nodeAddress": {
@@ -2929,9 +2069,6 @@ export const SCHEMAS: Record<string, unknown> = {
         "example": "VLESS-443",
         "type": "string"
       },
-      "security": {
-        "type": "string"
-      },
       "shareAddr": {
         "type": "string"
       },
@@ -2948,14 +2085,6 @@ export const SCHEMAS: Record<string, unknown> = {
       "tlsFlowCapable": {
         "example": true,
         "type": "boolean"
-      },
-      "tuicServer": {
-        "allOf": [
-          {
-            "$ref": "#/components/schemas/TuicServerSettings"
-          }
-        ],
-        "nullable": true
       },
       "wgDns": {
         "type": "string"
@@ -2979,118 +2108,6 @@ export const SCHEMAS: Record<string, unknown> = {
     ],
     "type": "object"
   },
-  "InboundTrafficSummary": {
-    "properties": {
-      "down": {
-        "example": 2097152,
-        "format": "int64",
-        "type": "integer"
-      },
-      "enable": {
-        "example": true,
-        "type": "boolean"
-      },
-      "id": {
-        "example": 1,
-        "type": "integer"
-      },
-      "total": {
-        "example": 10737418240,
-        "format": "int64",
-        "type": "integer"
-      },
-      "up": {
-        "example": 1048576,
-        "format": "int64",
-        "type": "integer"
-      }
-    },
-    "required": [
-      "down",
-      "enable",
-      "id",
-      "total",
-      "up"
-    ],
-    "type": "object"
-  },
-  "LogEntry": {
-    "properties": {
-      "DateTime": {
-        "example": "2025-01-01T12:00:00Z",
-        "format": "date-time",
-        "type": "string"
-      },
-      "Email": {
-        "example": "alice@example.com",
-        "type": "string"
-      },
-      "Event": {
-        "example": 0,
-        "type": "integer"
-      },
-      "FromAddress": {
-        "example": "192.0.2.10:54321",
-        "type": "string"
-      },
-      "Inbound": {
-        "example": "inbound-443",
-        "type": "string"
-      },
-      "Outbound": {
-        "example": "direct",
-        "type": "string"
-      },
-      "ToAddress": {
-        "example": "example.com:443",
-        "type": "string"
-      }
-    },
-    "required": [
-      "DateTime",
-      "Email",
-      "Event",
-      "FromAddress",
-      "Inbound",
-      "Outbound",
-      "ToAddress"
-    ],
-    "type": "object"
-  },
-  "MLDSA65Response": {
-    "properties": {
-      "seed": {
-        "example": "mldsa65-seed",
-        "type": "string"
-      },
-      "verify": {
-        "example": "mldsa65-verify",
-        "type": "string"
-      }
-    },
-    "required": [
-      "seed",
-      "verify"
-    ],
-    "type": "object"
-  },
-  "MLKEM768Response": {
-    "properties": {
-      "client": {
-        "example": "mlkem768-client",
-        "type": "string"
-      },
-      "seed": {
-        "example": "mlkem768-seed",
-        "type": "string"
-      }
-    },
-    "required": [
-      "client",
-      "seed"
-    ],
-    "type": "object"
-  },
   "Msg": {
     "properties": {
       "msg": {
@@ -3108,20 +2125,8 @@ export const SCHEMAS: Record<string, unknown> = {
     ],
     "type": "object"
   },
-  "NewUUIDResponse": {
-    "properties": {
-      "uuid": {
-        "example": "550e8400-e29b-41d4-a716-446655440000",
-        "type": "string"
-      }
-    },
-    "required": [
-      "uuid"
-    ],
-    "type": "object"
-  },
   "Node": {
-    "description": "Node represents a remote 3x-ui panel registered with the central panel.\nThe central panel polls each node's existing /panel/api/server/status\nendpoint over HTTP using the per-node ApiToken to populate the runtime\nstatus fields below.",
+    "description": "Node represents a remote Heimdall panel registered with the central panel.\nThe central panel polls each node's existing /panel/api/server/status\nendpoint over HTTP using the per-node ApiToken to populate the runtime\nstatus fields below.",
     "properties": {
       "activeCount": {
         "example": 23,
@@ -3133,6 +2138,10 @@ export const SCHEMAS: Record<string, unknown> = {
       },
       "allowPrivateAddress": {
         "type": "boolean"
+      },
+      "apiToken": {
+        "example": "abcdef0123456789",
+        "type": "string"
       },
       "basePath": {
         "example": "/",
@@ -3304,6 +2313,7 @@ export const SCHEMAS: Record<string, unknown> = {
       "activeCount",
       "address",
       "allowPrivateAddress",
+      "apiToken",
       "basePath",
       "clientCount",
       "configDirty",
@@ -3314,315 +2324,6 @@ export const SCHEMAS: Record<string, unknown> = {
       "disabledCount",
       "enable",
       "guid",
-      "id",
-      "inboundCount",
-      "inboundSyncMode",
-      "inboundTags",
-      "lastError",
-      "lastHeartbeat",
-      "latencyMs",
-      "memPct",
-      "name",
-      "netDown",
-      "netUp",
-      "onlineCount",
-      "outboundTag",
-      "panelVersion",
-      "pinnedCertSha256",
-      "port",
-      "remark",
-      "scheme",
-      "status",
-      "tlsVerifyMode",
-      "updatedAt",
-      "uptimeSecs",
-      "xrayError",
-      "xrayState",
-      "xrayVersion"
-    ],
-    "type": "object"
-  },
-  "NodeMutationRequest": {
-    "description": "NodeMutationRequest is the node write/probe contract. ApiToken is accepted\nonly as input. On update, nil means keep the stored token; replacement and\nclearing are explicit and mutually exclusive.",
-    "properties": {
-      "address": {
-        "type": "string"
-      },
-      "allowPrivateAddress": {
-        "type": "boolean"
-      },
-      "apiToken": {
-        "nullable": true,
-        "type": "string"
-      },
-      "basePath": {
-        "type": "string"
-      },
-      "clearApiToken": {
-        "type": "boolean"
-      },
-      "enable": {
-        "type": "boolean"
-      },
-      "id": {
-        "type": "integer"
-      },
-      "inboundSyncMode": {
-        "enum": [
-          "all",
-          "selected"
-        ],
-        "type": "string"
-      },
-      "inboundTags": {
-        "items": {
-          "type": "string"
-        },
-        "type": "array"
-      },
-      "name": {
-        "type": "string"
-      },
-      "outboundTag": {
-        "type": "string"
-      },
-      "pinnedCertSha256": {
-        "type": "string"
-      },
-      "port": {
-        "maximum": 65535,
-        "minimum": 1,
-        "type": "integer"
-      },
-      "remark": {
-        "type": "string"
-      },
-      "scheme": {
-        "enum": [
-          "http",
-          "https"
-        ],
-        "type": "string"
-      },
-      "tlsVerifyMode": {
-        "enum": [
-          "verify",
-          "skip",
-          "pin",
-          "mtls"
-        ],
-        "type": "string"
-      }
-    },
-    "required": [
-      "address",
-      "allowPrivateAddress",
-      "basePath",
-      "enable",
-      "id",
-      "inboundSyncMode",
-      "inboundTags",
-      "name",
-      "outboundTag",
-      "pinnedCertSha256",
-      "port",
-      "remark",
-      "scheme",
-      "tlsVerifyMode"
-    ],
-    "type": "object"
-  },
-  "NodeView": {
-    "description": "NodeView is the browser/API read contract for nodes. Credentials are\nwrite-only: responses expose only whether a node has a token configured.",
-    "properties": {
-      "activeCount": {
-        "example": 20,
-        "type": "integer"
-      },
-      "address": {
-        "example": "node.example.com",
-        "type": "string"
-      },
-      "allowPrivateAddress": {
-        "example": false,
-        "type": "boolean"
-      },
-      "basePath": {
-        "example": "/",
-        "type": "string"
-      },
-      "clientCount": {
-        "example": 25,
-        "type": "integer"
-      },
-      "configDirty": {
-        "example": false,
-        "type": "boolean"
-      },
-      "configDirtyAt": {
-        "example": 0,
-        "format": "int64",
-        "type": "integer"
-      },
-      "cpuPct": {
-        "example": 12.5,
-        "type": "number"
-      },
-      "createdAt": {
-        "example": 1700000000,
-        "format": "int64",
-        "type": "integer"
-      },
-      "depletedCount": {
-        "example": 1,
-        "type": "integer"
-      },
-      "disabledCount": {
-        "example": 2,
-        "type": "integer"
-      },
-      "enable": {
-        "example": true,
-        "type": "boolean"
-      },
-      "guid": {
-        "example": "node-guid",
-        "type": "string"
-      },
-      "hasApiToken": {
-        "example": true,
-        "type": "boolean"
-      },
-      "id": {
-        "example": 1,
-        "type": "integer"
-      },
-      "inboundCount": {
-        "example": 3,
-        "type": "integer"
-      },
-      "inboundSyncMode": {
-        "example": "all",
-        "type": "string"
-      },
-      "inboundTags": {
-        "example": [
-          "in-443-tcp"
-        ],
-        "items": {
-          "type": "string"
-        },
-        "type": "array"
-      },
-      "lastError": {
-        "type": "string"
-      },
-      "lastHeartbeat": {
-        "example": 1700000000,
-        "format": "int64",
-        "type": "integer"
-      },
-      "latencyMs": {
-        "example": 42,
-        "type": "integer"
-      },
-      "memPct": {
-        "example": 45.2,
-        "type": "number"
-      },
-      "name": {
-        "example": "edge-1",
-        "type": "string"
-      },
-      "netDown": {
-        "example": 1048576,
-        "format": "int64",
-        "type": "integer"
-      },
-      "netUp": {
-        "example": 2097152,
-        "format": "int64",
-        "type": "integer"
-      },
-      "onlineCount": {
-        "example": 5,
-        "type": "integer"
-      },
-      "outboundTag": {
-        "example": "direct",
-        "type": "string"
-      },
-      "panelVersion": {
-        "example": "v3.x.x",
-        "type": "string"
-      },
-      "parentGuid": {
-        "type": "string"
-      },
-      "pinnedCertSha256": {
-        "type": "string"
-      },
-      "port": {
-        "example": 2053,
-        "type": "integer"
-      },
-      "remark": {
-        "example": "Primary edge",
-        "type": "string"
-      },
-      "scheme": {
-        "example": "https",
-        "type": "string"
-      },
-      "status": {
-        "example": "online",
-        "type": "string"
-      },
-      "tlsVerifyMode": {
-        "example": "verify",
-        "type": "string"
-      },
-      "transitive": {
-        "example": false,
-        "type": "boolean"
-      },
-      "updatedAt": {
-        "example": 1700003600,
-        "format": "int64",
-        "type": "integer"
-      },
-      "uptimeSecs": {
-        "example": 86400,
-        "format": "int64",
-        "type": "integer"
-      },
-      "xrayError": {
-        "type": "string"
-      },
-      "xrayState": {
-        "example": "running",
-        "type": "string"
-      },
-      "xrayVersion": {
-        "example": "25.10.31",
-        "type": "string"
-      }
-    },
-    "required": [
-      "activeCount",
-      "address",
-      "allowPrivateAddress",
-      "basePath",
-      "clientCount",
-      "configDirty",
-      "configDirtyAt",
-      "cpuPct",
-      "createdAt",
-      "depletedCount",
-      "disabledCount",
-      "enable",
-      "guid",
-      "hasApiToken",
       "id",
       "inboundCount",
       "inboundSyncMode",
@@ -3711,68 +2412,6 @@ export const SCHEMAS: Record<string, unknown> = {
     ],
     "type": "object"
   },
-  "PeerActivity": {
-    "description": "PeerActivity is one peer's live embedded-Device-reported state, the\ncounterpart of an Xray access-log entry: a tunnel logs no requests, only\nhandshakes and bytes.",
-    "properties": {
-      "allowedIPs": {
-        "example": "10.8.1.2/32",
-        "type": "string"
-      },
-      "down": {
-        "example": 4194304,
-        "format": "int64",
-        "type": "integer"
-      },
-      "email": {
-        "example": "peer@example.com",
-        "type": "string"
-      },
-      "endpoint": {
-        "example": "203.0.113.9:51820",
-        "type": "string"
-      },
-      "handshake": {
-        "description": "Handshake is unix milliseconds, 0 when the peer has never connected.",
-        "example": 1735732800000,
-        "format": "int64",
-        "type": "integer"
-      },
-      "inboundId": {
-        "example": 1,
-        "type": "integer"
-      },
-      "interface": {
-        "example": "awg1",
-        "type": "string"
-      },
-      "online": {
-        "example": true,
-        "type": "boolean"
-      },
-      "tag": {
-        "example": "inbound-51820",
-        "type": "string"
-      },
-      "up": {
-        "example": 1048576,
-        "format": "int64",
-        "type": "integer"
-      }
-    },
-    "required": [
-      "allowedIPs",
-      "down",
-      "email",
-      "endpoint",
-      "handshake",
-      "inboundId",
-      "interface",
-      "online",
-      "tag",
-      "up"
-    ],
-    "type": "object"
-  },
   "ProbeResultUI": {
     "properties": {
       "cpuPct": {
@@ -3835,16 +2474,6 @@ export const SCHEMAS: Record<string, unknown> = {
         "example": "h2",
         "type": "string"
       },
-      "certChainBytes": {
-        "description": "CertChainBytes is the sum of DER lengths of the presented peer chain.\nxray-core ML-DSA-65 REALITY needs \u003e= 3500 bytes (constant lives in xray-core).",
-        "example": 3427,
-        "type": "integer"
-      },
-      "certChainValid": {
-        "description": "CertChainValid ignores the name: a trusted chain presented for other names\nstill has serverNames the panel can offer instead of the failing SNI.",
-        "example": true,
-        "type": "boolean"
-      },
       "certIssuer": {
         "example": "Google Trust Services",
         "type": "string"
@@ -3889,11 +2518,6 @@ export const SCHEMAS: Record<string, unknown> = {
         "example": 443,
         "type": "integer"
       },
-      "privateTarget": {
-        "description": "PrivateTarget marks a target that resolves to a loopback/private/link-local\naddress: blocked before the probe unless the caller opted in, then flagged.",
-        "example": false,
-        "type": "boolean"
-      },
       "reason": {
         "type": "string"
       },
@@ -3922,8 +2546,6 @@ export const SCHEMAS: Record<string, unknown> = {
     },
     "required": [
       "alpn",
-      "certChainBytes",
-      "certChainValid",
       "certIssuer",
       "certSubject",
       "certValid",
@@ -3935,7 +2557,6 @@ export const SCHEMAS: Record<string, unknown> = {
       "latencyMs",
       "notAfter",
       "port",
-      "privateTarget",
       "reason",
       "serverNames",
       "target",
@@ -3945,152 +2566,8 @@ export const SCHEMAS: Record<string, unknown> = {
     ],
     "type": "object"
   },
-  "ServerSettings": {
-    "description": "ServerSettings is the \"server\" block of an AmneziaWG inbound's Settings\nJSON: the interface-level configuration shared by every client/peer. The\nlisten port is deliberately not duplicated here — it lives on the inbound\nrow itself (Inbound.Port), like every other protocol.",
-    "properties": {
-      "contentPaddingAddition": {
-        "type": "string"
-      },
-      "disableCookies": {
-        "type": "boolean"
-      },
-      "externalInterface": {
-        "description": "ExternalInterface, IPv6Enabled, and IPv6ExternalInterface are live\nagain as of Phase 3.5 -- see the matching fields on Instance for what\nthey gate (internal/amneziawgnet's IPv6-address-alias mechanism).\nIPv6Subnet was never actually vestigial either: InstanceFromInbound\nalready consumes it (via serverAddressV6) to build the server's own\ntunnel address, same as always. Only RouteThroughXray, below, remains\ngenuinely vestigial as of the hard cutover to the embedded path\n(internal/amneziawgnet) -- read from existing stored settings for\nbackward compatibility, but not acted on by anything.",
-        "type": "string"
-      },
-      "h1": {
-        "type": "string"
-      },
-      "h2": {
-        "type": "string"
-      },
-      "h3": {
-        "type": "string"
-      },
-      "h4": {
-        "type": "string"
-      },
-      "headerProtectionKey": {
-        "description": "HeaderProtectionKey and ContentPaddingAddition are AmneziaWG 3.0\nfields, flat and top-level for the same tools/openapigen reason as\nthe block above; Obfuscation() below folds them back into\nObfuscation31's own identically named fields.\nHeaderProtectionKey is a base64 32-byte key; empty (the default)\ndisables AWG 3.0 header protection. A non-empty value requires\nevery one of S1-S4 above to be \u003e= 12 -- ValidateObfuscation\nenforces this at save time, not just at IpcSet time.\nContentPaddingAddition is a \"low-high\" range or bare integer, the\nsame grammar and uint32 cap as H1-H4.",
-        "type": "string"
-      },
-      "i1": {
-        "type": "string"
-      },
-      "i2": {
-        "type": "string"
-      },
-      "i3": {
-        "type": "string"
-      },
-      "i4": {
-        "type": "string"
-      },
-      "i5": {
-        "type": "string"
-      },
-      "ipv6Enabled": {
-        "type": "boolean"
-      },
-      "ipv6ExternalInterface": {
-        "type": "string"
-      },
-      "ipv6Subnet": {
-        "type": "string"
-      },
-      "jc": {
-        "description": "Obfuscation31's fields, repeated flat (not embedded) rather than\nnested under their own key: encoding/json would happily inline an\nembedded Obfuscation31 the same way, but the frontend's Go-\u003eZod/TS\ngenerator (tools/openapigen) does not — it emits a genuinely nested\n`obfuscation31` object, which would silently diverge from the real\nwire JSON. See Obfuscation() below for the manager-facing conversion.",
-        "type": "integer"
-      },
-      "jmax": {
-        "type": "integer"
-      },
-      "jmin": {
-        "type": "integer"
-      },
-      "keepaliveTimeout": {
-        "type": "string"
-      },
-      "maxHandshakeAttempts": {
-        "type": "string"
-      },
-      "mtu": {
-        "type": "integer"
-      },
-      "primaryDns": {
-        "description": "PrimaryDNS/SecondaryDNS seed client configs' DNS line. Blank is\nmeaningful, so no omitempty: a dropped key resurrects frontend defaults.",
-        "type": "string"
-      },
-      "privateKey": {
-        "type": "string"
-      },
-      "publicKey": {
-        "type": "string"
-      },
-      "randomTrailers": {
-        "description": "RandomTrailers/DisableCookies mirror Instance's identically named\nAmneziaWG 3.1 fields -- see that type's own doc comment for the real\nprotocol/interop details. Both real bool fields (not omitempty):\nbuildUAPIConfig always emits both lines explicitly so the\nreconfigure-in-place diff correctly notices a true-\u003efalse edit, not\njust false-\u003etrue.",
-        "type": "boolean"
-      },
-      "rejectAfterTime": {
-        "type": "string"
-      },
-      "rekeyAfterTime": {
-        "description": "RekeyAfterTime/RekeyTimeout/RejectAfterTime/KeepaliveTimeout/\nMaxHandshakeAttempts mirror Instance's identically named fields --\nsee that type's own doc comment for the grammar/width/real-default\ndetails. Flat and top-level for the same tools/openapigen reason as\nthe rest of this struct.",
-        "type": "string"
-      },
-      "rekeyTimeout": {
-        "type": "string"
-      },
-      "routeThroughXray": {
-        "type": "boolean"
-      },
-      "s1": {
-        "type": "integer"
-      },
-      "s2": {
-        "type": "integer"
-      },
-      "s3": {
-        "type": "integer"
-      },
-      "s4": {
-        "type": "integer"
-      },
-      "secondaryDns": {
-        "type": "string"
-      },
-      "subnetCidr": {
-        "type": "integer"
-      },
-      "subnetIp": {
-        "type": "string"
-      }
-    },
-    "required": [
-      "disableCookies",
-      "h1",
-      "h2",
-      "h3",
-      "h4",
-      "jc",
-      "jmax",
-      "jmin",
-      "primaryDns",
-      "privateKey",
-      "publicKey",
-      "randomTrailers",
-      "s1",
-      "s2",
-      "s3",
-      "s4",
-      "secondaryDns",
-      "subnetCidr",
-      "subnetIp"
-    ],
-    "type": "object"
-  },
   "Setting": {
-    "description": "Setting stores key-value configuration settings for the 3x-ui panel.",
+    "description": "Setting stores key-value configuration settings for the Heimdall panel.",
     "properties": {
       "id": {
         "type": "integer"
@@ -4109,201 +2586,86 @@ export const SCHEMAS: Record<string, unknown> = {
     ],
     "type": "object"
   },
-  "SubBalancer": {
-    "description": "SubBalancer is one extra JSON-subscription config document whose members are\nthe selected inbounds' proxy outbounds. SortOrder shares SubSortIndex semantics.",
+  "User": {
+    "description": "User represents an administrator account in the Heimdall panel.",
     "properties": {
       "createdAt": {
-        "example": 1710000000000,
         "format": "int64",
         "type": "integer"
       },
-      "enabled": {
-        "description": "No gorm default:true — a bool default makes an explicit false at insert\ncollapse back to the column default (zero value is skipped).",
-        "example": true,
-        "type": "boolean"
-      },
-      "id": {
-        "example": 1,
+      "dataLimit": {
+        "format": "int64",
         "type": "integer"
       },
-      "inboundIds": {
-        "example": [
-          1,
-          3
-        ],
-        "items": {
-          "type": "integer"
-        },
-        "type": "array"
-      },
-      "memberWeights": {
-        "additionalProperties": {
-          "type": "number"
-        },
-        "description": "inboundId -\u003e leastLoad weight; absent entries mean 1.0. Only meaningful\nwith Strategy \"leastLoad\" — xray ignores costs on every other strategy.",
-        "type": "object"
-      },
-      "remark": {
-        "example": "auto-fastest",
-        "maxLength": 256,
+      "discordWebhook": {
         "type": "string"
       },
-      "sortOrder": {
-        "example": 1,
-        "minimum": 1,
+      "id": {
         "type": "integer"
       },
-      "strategy": {
-        "enum": [
-          "leastLoad",
-          "leastPing",
-          "random",
-          "roundRobin"
-        ],
-        "example": "random",
+      "note": {
+        "type": "string"
+      },
+      "notificationFilters": {
+        "type": "string"
+      },
+      "password": {
+        "type": "string"
+      },
+      "permissionOverrides": {
+        "type": "string"
+      },
+      "profileTitle": {
+        "type": "string"
+      },
+      "roleId": {
+        "type": "integer"
+      },
+      "status": {
+        "type": "string"
+      },
+      "subscriptionDomain": {
+        "type": "string"
+      },
+      "subscriptionTemplatePath": {
+        "type": "string"
+      },
+      "supportUrl": {
+        "type": "string"
+      },
+      "telegramId": {
         "type": "string"
       },
       "updatedAt": {
-        "example": 1710000000000,
-        "format": "int64",
-        "type": "integer"
-      }
-    },
-    "required": [
-      "createdAt",
-      "enabled",
-      "id",
-      "inboundIds",
-      "remark",
-      "sortOrder",
-      "strategy",
-      "updatedAt"
-    ],
-    "type": "object"
-  },
-  "Traffic": {
-    "description": "Traffic represents network traffic statistics for Xray connections.\nIt tracks upload and download bytes for inbound or outbound traffic.",
-    "properties": {
-      "Down": {
-        "example": 2097152,
         "format": "int64",
         "type": "integer"
       },
-      "IsInbound": {
-        "example": true,
-        "type": "boolean"
-      },
-      "IsOutbound": {
-        "example": false,
-        "type": "boolean"
-      },
-      "Tag": {
-        "example": "inbound-443",
-        "type": "string"
-      },
-      "Up": {
-        "example": 1048576,
+      "usedBytes": {
         "format": "int64",
         "type": "integer"
-      }
-    },
-    "required": [
-      "Down",
-      "IsInbound",
-      "IsOutbound",
-      "Tag",
-      "Up"
-    ],
-    "type": "object"
-  },
-  "TuicClientSettings": {
-    "properties": {
-      "email": {
-        "type": "string"
-      },
-      "password": {
-        "type": "string"
-      },
-      "uuid": {
-        "type": "string"
-      }
-    },
-    "required": [
-      "email",
-      "password",
-      "uuid"
-    ],
-    "type": "object"
-  },
-  "TuicServerSettings": {
-    "properties": {
-      "alpn": {
-        "items": {
-          "type": "string"
-        },
-        "type": "array"
-      },
-      "authentication_timeout": {
-        "type": "integer"
-      },
-      "certificate": {
-        "type": "string"
-      },
-      "congestion_control": {
-        "type": "string"
-      },
-      "log_level": {
-        "type": "string"
-      },
-      "max_idle_time": {
-        "type": "integer"
-      },
-      "max_udp_relay_packet_size": {
-        "type": "integer"
-      },
-      "private_key": {
-        "type": "string"
-      },
-      "sni": {
-        "type": "string"
-      },
-      "udp_relay_mode": {
-        "type": "string"
-      },
-      "zero_rtt_handshake": {
-        "type": "boolean"
-      }
-    },
-    "required": [
-      "alpn",
-      "authentication_timeout",
-      "certificate",
-      "congestion_control",
-      "log_level",
-      "max_idle_time",
-      "max_udp_relay_packet_size",
-      "private_key",
-      "udp_relay_mode",
-      "zero_rtt_handshake"
-    ],
-    "type": "object"
-  },
-  "User": {
-    "description": "User represents a user account in the 3x-ui panel.",
-    "properties": {
-      "id": {
-        "type": "integer"
-      },
-      "password": {
-        "type": "string"
       },
       "username": {
         "type": "string"
       }
     },
     "required": [
+      "createdAt",
+      "dataLimit",
+      "discordWebhook",
       "id",
+      "note",
+      "notificationFilters",
       "password",
+      "permissionOverrides",
+      "profileTitle",
+      "roleId",
+      "status",
+      "subscriptionDomain",
+      "subscriptionTemplatePath",
+      "supportUrl",
+      "telegramId",
+      "updatedAt",
+      "usedBytes",
       "username"
     ],
     "type": "object"

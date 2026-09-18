@@ -2,8 +2,8 @@ package panel
 
 import (
 	"errors"
-	"time"
 
+	"github.com/xlzd/gotp"
 	"gorm.io/gorm"
 
 	"github.com/GALEXY-PANEL/3x-ui/v3/internal/database"
@@ -11,7 +11,6 @@ import (
 	"github.com/GALEXY-PANEL/3x-ui/v3/internal/logger"
 	"github.com/GALEXY-PANEL/3x-ui/v3/internal/util/crypto"
 	ldaputil "github.com/GALEXY-PANEL/3x-ui/v3/internal/util/ldap"
-	"github.com/GALEXY-PANEL/3x-ui/v3/internal/util/totp"
 	"github.com/GALEXY-PANEL/3x-ui/v3/internal/web/service"
 )
 
@@ -50,6 +49,10 @@ func (s *UserService) CheckUser(username string, password string, twoFactorCode 
 	} else if err != nil {
 		logger.Warning("check user err:", err)
 		return nil, err
+	}
+
+	if user.Status != "" && user.Status != model.AdminStatusActive {
+		return nil, errors.New("admin account is disabled")
 	}
 
 	if !crypto.CheckPasswordHash(user.Password, password) {
@@ -98,9 +101,13 @@ func (s *UserService) CheckUser(username string, password string, twoFactorCode 
 			return nil, err
 		}
 
-		if !totp.VerifyWithSkew(twoFactorToken, twoFactorCode, time.Now()) {
+		if gotp.NewDefaultTOTP(twoFactorToken).Now() != twoFactorCode {
 			return nil, errors.New("invalid 2fa code")
 		}
+	}
+
+	if err := EnforceLimitedAdminFeatures(user); err != nil {
+		return nil, err
 	}
 
 	return user, nil

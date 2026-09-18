@@ -6,24 +6,9 @@ export function arrJoin(v: unknown): string | undefined {
   return String(v);
 }
 
-/**
- * Translate a table row's positional index into that rule's index in the full,
- * unfiltered routing.rules array. The table hides balancer-loopback rules but
- * keeps each visible row's original index in `key`, so any handler that mutates
- * routing.rules must map the positional index back through `key` or it operates
- * on the wrong rule once a hidden loopback precedes it.
- */
-export function originalRuleIndex(rows: RuleRow[], positionalIndex: number): number {
-  const row = rows[positionalIndex];
-  return row ? row.key : positionalIndex;
-}
-
 export function csv(value?: string): string[] {
   if (!value) return [];
-  return String(value)
-    .split(',')
-    .map((s) => s.trim())
-    .filter(Boolean);
+  return String(value).split(',').map((s) => s.trim()).filter(Boolean);
 }
 
 export function chipPreviewParts(parts: string[]): string {
@@ -48,7 +33,10 @@ export function buildRemarkByTag(
 }
 
 /** Format a single inbound tag as `tag (remark)`, or just `tag` when no distinct remark. */
-export function formatInboundTag(tag: string, remarkByTag: Record<string, string> = {}): string {
+export function formatInboundTag(
+  tag: string,
+  remarkByTag: Record<string, string> = {},
+): string {
   const label = remarkByTag[tag]?.trim();
   if (!label || label === tag) return tag;
   return `${tag} (${label})`;

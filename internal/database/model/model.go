@@ -1,4 +1,4 @@
-// Package model defines the database models and data structures used by the 3x-ui panel.
+// Package model defines the database models and data structures used by the Heimdall panel.
 package model
 
 import (
@@ -32,38 +32,55 @@ const (
 	WireGuard   Protocol = "wireguard"
 	Hysteria    Protocol = "hysteria"
 	MTProto     Protocol = "mtproto"
-	AmneziaWG   Protocol = "amneziawg"
-	TUIC        Protocol = "tuic"
 )
 
-// User represents a user account in the 3x-ui panel.
+// User represents an administrator account in the Heimdall panel.
 type User struct {
 	Id         int    `json:"id" gorm:"primaryKey;autoIncrement"`
-	Username   string `json:"username"`
+	Username   string `json:"username" gorm:"uniqueIndex;not null"`
 	Password   string `json:"password"`
 	LoginEpoch int64  `json:"-" gorm:"default:0"`
+
+	RoleId    int    `json:"roleId" gorm:"column:role_id;index;default:0"`
+	Status    string `json:"status" gorm:"default:active;index"`
+	DataLimit int64  `json:"dataLimit" gorm:"column:data_limit;default:0"`
+	UsedBytes int64  `json:"usedBytes" gorm:"column:used_bytes;default:0"`
+
+	TelegramID               string `json:"telegramId" gorm:"column:telegram_id"`
+	DiscordWebhook           string `json:"discordWebhook" gorm:"column:discord_webhook"`
+	SupportURL               string `json:"supportUrl" gorm:"column:support_url"`
+	ProfileTitle             string `json:"profileTitle" gorm:"column:profile_title"`
+	SubscriptionDomain       string `json:"subscriptionDomain" gorm:"column:subscription_domain"`
+	SubscriptionTemplatePath string `json:"subscriptionTemplatePath" gorm:"column:subscription_template_path"`
+	Note                     string `json:"note"`
+
+	NotificationFiltersJSON string `json:"notificationFilters" gorm:"column:notification_filters;type:text"`
+	PermissionOverridesJSON string `json:"permissionOverrides" gorm:"column:permission_overrides;type:text"`
+
+	CreatedAt int64 `json:"createdAt" gorm:"autoCreateTime:milli"`
+	UpdatedAt int64 `json:"updatedAt" gorm:"autoUpdateTime:milli"`
 }
 
 // Inbound represents an Xray inbound configuration with traffic statistics and settings.
 type Inbound struct {
-	Id                   int                  `json:"id" form:"id" gorm:"primaryKey;autoIncrement" example:"1"`                                                                                                     // Unique identifier
-	UserId               int                  `json:"-"`                                                                                                                                                            // Associated user ID
-	Up                   int64                `json:"up" form:"up"`                                                                                                                                                 // Upload traffic in bytes
-	Down                 int64                `json:"down" form:"down"`                                                                                                                                             // Download traffic in bytes
-	Total                int64                `json:"total" form:"total"`                                                                                                                                           // Total traffic limit in bytes
+	Id                   int                  `json:"id" form:"id" gorm:"primaryKey;autoIncrement" example:"1"` // Unique identifier
+	UserId               int                  `json:"-"`                                                        // Associated user ID
+	Up                   int64                `json:"up" form:"up"`                                             // Upload traffic in bytes
+	Down                 int64                `json:"down" form:"down"`                                         // Download traffic in bytes
+	Total                int64                `json:"total" form:"total"`
+	UsageMultiplier      float64              `json:"usageMultiplier" form:"usageMultiplier" gorm:"column:usage_multiplier;default:1.00" example:"1"`                                                               // Billable usage multiplier; 1.00 means real usage
 	Remark               string               `json:"remark" form:"remark" example:"VLESS-443"`                                                                                                                     // Human-readable remark
-	SubSortIndex         int                  `json:"subSortIndex" form:"subSortIndex" gorm:"default:1" validate:"omitempty" example:"1"`                                                                           // Sort order of this inbound's links in subscription output only (lower first; negatives allowed; 0/omitted → 1; ties by id)
+	SubSortIndex         int                  `json:"subSortIndex" form:"subSortIndex" gorm:"default:1" validate:"omitempty,gte=1" example:"1"`                                                                     // 1-based sort order of this inbound's links in subscription output only (lower first; ties by id)
 	Enable               bool                 `json:"enable" form:"enable" gorm:"index:idx_enable_traffic_reset,priority:1" example:"true"`                                                                         // Whether the inbound is enabled
 	ExpiryTime           int64                `json:"expiryTime" form:"expiryTime"`                                                                                                                                 // Expiration timestamp
 	TrafficReset         string               `json:"trafficReset" form:"trafficReset" gorm:"default:never;index:idx_enable_traffic_reset,priority:2" validate:"omitempty,oneof=never hourly daily weekly monthly"` // Traffic reset schedule
-	TrafficResetDay      int                  `json:"trafficResetDay" form:"trafficResetDay" gorm:"default:1" validate:"omitempty,gte=1,lte=31" example:"1"`                                                        // Day of month for monthly traffic resets
 	LastTrafficResetTime int64                `json:"lastTrafficResetTime" form:"lastTrafficResetTime" gorm:"default:0"`                                                                                            // Last traffic reset timestamp
 	ClientStats          []xray.ClientTraffic `gorm:"foreignKey:InboundId;references:Id" json:"clientStats" form:"clientStats"`                                                                                     // Client traffic statistics
 
 	// Xray configuration fields
 	Listen            string   `json:"listen" form:"listen"`
 	Port              int      `json:"port" form:"port" validate:"gte=0,lte=65535" example:"443"`
-	Protocol          Protocol `json:"protocol" form:"protocol" validate:"required,oneof=vmess vless trojan shadowsocks wireguard hysteria http mixed tunnel tun mtproto amneziawg tuic" example:"vless"`
+	Protocol          Protocol `json:"protocol" form:"protocol" validate:"required,oneof=vmess vless trojan shadowsocks wireguard hysteria http mixed tunnel tun mtproto" example:"vless"`
 	Settings          string   `json:"settings" form:"settings"`
 	StreamSettings    string   `json:"streamSettings" form:"streamSettings"`
 	Tag               string   `json:"tag" form:"tag" gorm:"unique" example:"in-443-tcp"`
@@ -71,8 +88,6 @@ type Inbound struct {
 	NodeID            *int     `json:"nodeId,omitempty" form:"nodeId" gorm:"index"`
 	ShareAddrStrategy string   `json:"shareAddrStrategy" form:"shareAddrStrategy" gorm:"column:share_addr_strategy;default:node" validate:"omitempty,oneof=node listen custom"`
 	ShareAddr         string   `json:"shareAddr" form:"shareAddr" gorm:"column:share_addr"`
-
-	DisableFlow bool `json:"disableFlow" form:"disableFlow" gorm:"column:disable_flow;default:false" example:"false"`
 
 	// OriginNodeGuid is the panelGuid of the node that physically hosts this
 	// inbound, propagated up across hops (#4983). Empty for an inbound that
@@ -159,23 +174,26 @@ type HistoryOfSeeders struct {
 const ApiTokenUnixMillisecondsThreshold int64 = 100_000_000_000
 
 const (
-	ApiScopeAdmin    = "admin"
-	ApiScopeMonitor  = "monitor"
-	ApiScopeNodeSync = "node-sync"
+	// ApiTokenKindService preserves the existing full-panel token contract used
+	// by remote Heimdall nodes and other trusted service-to-service callers.
+	ApiTokenKindService = "service"
+	// ApiTokenKindDelegated authenticates as the active non-owner admin selected
+	// when the token is created. Its effective access is further constrained by
+	// the token scopes stored on the row.
+	ApiTokenKindDelegated = "delegated"
 )
 
-func IsKnownApiScope(s string) bool {
-	return s == ApiScopeAdmin || s == ApiScopeMonitor || s == ApiScopeNodeSync
-}
-
 type ApiToken struct {
-	Id        int    `json:"id" gorm:"primaryKey;autoIncrement"`
-	Name      string `json:"name" gorm:"uniqueIndex;not null"`
-	Token     string `json:"token" gorm:"not null"` // SHA-256 hash; the plaintext is shown only once at creation
-	Enabled   bool   `json:"enabled" gorm:"default:true"`
-	CreatedAt int64  `json:"createdAt" gorm:"autoCreateTime"`
-	Scope     string `json:"scope" gorm:"not null;default:admin"`
-	ExpiresAt int64  `json:"expiresAt" gorm:"not null;default:0"`
+	Id               int    `json:"id" gorm:"primaryKey;autoIncrement"`
+	Name             string `json:"name" gorm:"uniqueIndex;not null"`
+	Token            string `json:"-" gorm:"not null;index:idx_api_tokens_token_hash"` // SHA-256 hash; plaintext is shown only once
+	Kind             string `json:"kind" gorm:"not null;default:service;index"`
+	SubjectAdminId   *int   `json:"subjectAdminId,omitempty" gorm:"column:subject_admin_id;index"`
+	CreatedByAdminId *int   `json:"createdByAdminId,omitempty" gorm:"column:created_by_admin_id;index"`
+	ScopesJSON       string `json:"-" gorm:"column:scopes;type:text"`
+	ExpiresAt        int64  `json:"expiresAt" gorm:"column:expires_at;default:0;index"`
+	Enabled          bool   `json:"enabled" gorm:"default:true"`
+	CreatedAt        int64  `json:"createdAt" gorm:"autoCreateTime"`
 }
 
 // MarshalJSON emits settings, streamSettings, and sniffing as nested JSON
@@ -244,57 +262,6 @@ func jsonStringFieldFromRaw(r json.RawMessage) string {
 		}
 	}
 	return string(trimmed)
-}
-
-// hysteriaConfigVersion is the only hysteria version xray-core builds. Both
-// the protocol settings and the transport settings answer anything else with
-// "version != 2", and that error rejects the whole config — every other
-// inbound on the server goes down with it, not just the hysteria one.
-const hysteriaConfigVersion = 2
-
-// HealHysteriaVersion pins a hysteria inbound's settings.version to the
-// version xray-core accepts. Rows written before the panel settled on v2, or
-// through the API and the raw JSON editor, can still carry the legacy 1 or no
-// version at all, either of which stops the core from starting.
-func HealHysteriaVersion(settings string) (string, bool) {
-	return healVersionField(settings, nil)
-}
-
-// HealHysteriaStreamVersion does the same for the transport half,
-// streamSettings.hysteriaSettings.version, which xray-core validates
-// separately. An absent hysteriaSettings object is left alone.
-func HealHysteriaStreamVersion(streamSettings string) (string, bool) {
-	return healVersionField(streamSettings, []string{"hysteriaSettings"})
-}
-
-// healVersionField rewrites the "version" key of the object reached by path to
-// hysteriaConfigVersion, reporting whether anything changed. A path that does
-// not resolve to an object leaves the input untouched.
-func healVersionField(raw string, path []string) (string, bool) {
-	if raw == "" {
-		return raw, false
-	}
-	var parsed map[string]any
-	if err := json.Unmarshal([]byte(raw), &parsed); err != nil {
-		return raw, false
-	}
-	target := parsed
-	for _, key := range path {
-		next, ok := target[key].(map[string]any)
-		if !ok {
-			return raw, false
-		}
-		target = next
-	}
-	if version, ok := target["version"].(float64); ok && version == hysteriaConfigVersion {
-		return raw, false
-	}
-	target["version"] = hysteriaConfigVersion
-	out, err := json.MarshalIndent(parsed, "", "  ")
-	if err != nil {
-		return raw, false
-	}
-	return string(out), true
 }
 
 // StripInboundXhttpClientFields removes xHTTP knobs that belong on the
@@ -366,19 +333,10 @@ func (i *Inbound) GenXrayInboundConfig() *xray.InboundConfig {
 		if converted, ok := WireguardClientsToPeers(settings); ok {
 			settings = converted
 		}
-	case Hysteria:
-		if healed, ok := HealHysteriaVersion(settings); ok {
-			settings = healed
-		}
 	}
 	streamSettings := i.StreamSettings
 	if stripped, ok := StripInboundXhttpClientFields(streamSettings); ok {
 		streamSettings = stripped
-	}
-	if i.Protocol == Hysteria {
-		if healed, ok := HealHysteriaStreamVersion(streamSettings); ok {
-			streamSettings = healed
-		}
 	}
 	return &xray.InboundConfig{
 		Listen:         json_util.RawMessage(listen),
@@ -442,8 +400,8 @@ func WireguardPeerFromClient(c Client) map[string]any {
 	if c.PreSharedKey != "" {
 		peer["preSharedKey"] = c.PreSharedKey
 	}
-	if ka := c.KeepAliveSeconds(); ka > 0 {
-		peer["keepAlive"] = ka
+	if c.KeepAlive > 0 {
+		peer["keepAlive"] = c.KeepAlive
 	}
 	return peer
 }
@@ -764,14 +722,14 @@ func HealMtprotoClientSecrets(settings string) (string, bool) {
 	return string(out), true
 }
 
-// Setting stores key-value configuration settings for the 3x-ui panel.
+// Setting stores key-value configuration settings for the Heimdall panel.
 type Setting struct {
 	Id    int    `json:"id" form:"id" gorm:"primaryKey;autoIncrement"`
 	Key   string `json:"key" form:"key" gorm:"index:idx_settings_key"`
 	Value string `json:"value" form:"value"`
 }
 
-// Node represents a remote 3x-ui panel registered with the central panel.
+// Node represents a remote Heimdall panel registered with the central panel.
 // The central panel polls each node's existing /panel/api/server/status
 // endpoint over HTTP using the per-node ApiToken to populate the runtime
 // status fields below.
@@ -783,12 +741,12 @@ type Node struct {
 	Address             string   `json:"address" form:"address" validate:"required" example:"node1.example.com"`
 	Port                int      `json:"port" form:"port" validate:"gte=1,lte=65535" example:"2053"`
 	BasePath            string   `json:"basePath" form:"basePath" example:"/"`
-	ApiToken            string   `json:"-" form:"-" gorm:"column:api_token" validate:"required_unless=TlsVerifyMode mtls" example:"abcdef0123456789"`
+	ApiToken            string   `json:"apiToken" form:"apiToken" validate:"required_unless=TlsVerifyMode mtls" example:"abcdef0123456789"`
 	Enable              bool     `json:"enable" form:"enable" gorm:"default:true" example:"true"`
 	AllowPrivateAddress bool     `json:"allowPrivateAddress" form:"allowPrivateAddress" gorm:"default:false"`
 	TlsVerifyMode       string   `json:"tlsVerifyMode" form:"tlsVerifyMode" gorm:"column:tls_verify_mode;default:verify" validate:"omitempty,oneof=verify skip pin mtls"`
 	PinnedCertSha256    string   `json:"pinnedCertSha256" form:"pinnedCertSha256" gorm:"column:pinned_cert_sha256"`
-	InboundSyncMode     string   `json:"inboundSyncMode" form:"inboundSyncMode" gorm:"column:inbound_sync_mode;default:all" validate:"omitempty,oneof=all selected"`
+	InboundSyncMode     string   `json:"inboundSyncMode" form:"inboundSyncMode" gorm:"column:inbound_sync_mode;default:selected" validate:"omitempty,oneof=all selected"`
 	InboundTags         []string `json:"inboundTags" form:"inboundTags" gorm:"serializer:json;column:inbound_tags"`
 	OutboundTag         string   `json:"outboundTag" form:"outboundTag" gorm:"column:outbound_tag"`
 
@@ -802,17 +760,21 @@ type Node struct {
 	// Heartbeat-updated fields. UpdatedAt advances on every probe even when
 	// the row is otherwise unchanged so the UI's "last seen" tooltip is
 	// truthful without us having to read LastHeartbeat separately.
-	Status        string  `json:"status" gorm:"default:unknown" example:"online"` // online|offline|unknown
-	LastHeartbeat int64   `json:"lastHeartbeat" example:"1700000000"`             // unix seconds, 0 = never
-	LatencyMs     int     `json:"latencyMs" example:"42"`
-	XrayVersion   string  `json:"xrayVersion" example:"25.10.31"`
-	PanelVersion  string  `json:"panelVersion" gorm:"column:panel_version" example:"v3.x.x"`
-	CpuPct        float64 `json:"cpuPct" example:"23.5"`
-	MemPct        float64 `json:"memPct" example:"45.1"`
-	UptimeSecs    uint64  `json:"uptimeSecs" example:"86400"`
-	NetUp         uint64  `json:"netUp" gorm:"column:net_up" example:"1048576"`
-	NetDown       uint64  `json:"netDown" gorm:"column:net_down" example:"2097152"`
-	LastError     string  `json:"lastError"`
+	Status        string `json:"status" gorm:"default:unknown" example:"online"` // online|offline|unknown
+	LastHeartbeat int64  `json:"lastHeartbeat" example:"1700000000"`             // unix seconds, 0 = never
+	LatencyMs     int    `json:"latencyMs" example:"42"`
+	XrayVersion   string `json:"xrayVersion" example:"25.10.31"`
+	PanelVersion  string `json:"panelVersion" gorm:"column:panel_version" example:"v3.x.x"`
+	// Capabilities is the last successfully advertised X-3x-Node-Caps value.
+	// It is observed state, not operator input, and survives offline periods so
+	// desired configuration can still be queued for a previously verified node.
+	Capabilities string  `json:"-" gorm:"column:capabilities"`
+	CpuPct       float64 `json:"cpuPct" example:"23.5"`
+	MemPct       float64 `json:"memPct" example:"45.1"`
+	UptimeSecs   uint64  `json:"uptimeSecs" example:"86400"`
+	NetUp        uint64  `json:"netUp" gorm:"column:net_up" example:"1048576"`
+	NetDown      uint64  `json:"netDown" gorm:"column:net_down" example:"2097152"`
+	LastError    string  `json:"lastError"`
 
 	// XrayState and XrayError are captured from the remote node's /panel/api/server/status
 	// during heartbeats. They let the central panel distinguish "panel API reachable"
@@ -823,8 +785,8 @@ type Node struct {
 	ConfigDirty   bool  `json:"configDirty" gorm:"default:false"`
 	ConfigDirtyAt int64 `json:"configDirtyAt"`
 
-	// InboundsAdoptedAt is the clean sync that imported the node's inbounds; a
-	// save that grows the selection zeroes it so reconcile waits before sweeping.
+	// InboundsAdoptedAt records the first clean traffic sync that imported the
+	// node's pre-existing inbounds; reconcile must not sweep remote tags before it.
 	InboundsAdoptedAt int64 `json:"-" gorm:"column:inbounds_adopted_at;default:0"`
 
 	InboundCount  int `json:"inboundCount" gorm:"-" example:"5"`
@@ -873,83 +835,69 @@ type ClientReverse struct {
 
 // Client represents a client configuration for Xray inbounds with traffic limits and settings.
 type Client struct {
-	ID         string         `json:"id,omitempty"`       // Unique client identifier
-	Security   string         `json:"security"`           // Security method (e.g., "auto", "aes-128-gcm")
-	Password   string         `json:"password,omitempty"` // Client password
-	Flow       string         `json:"flow,omitempty"`     // Flow control (XTLS)
-	Reverse    *ClientReverse `json:"reverse,omitempty"`  // VLESS simple reverse proxy settings
-	Auth       string         `json:"auth,omitempty"`     // Auth password (Hysteria)
-	PrivateKey string         `json:"privateKey,omitempty"`
-	PublicKey  string         `json:"publicKey,omitempty"`
-	AllowedIPs []string       `json:"allowedIPs,omitempty"`
-	// AllowedIPsByInbound optionally overrides AllowedIPs on a per-inbound
-	// basis, keyed by inbound id. Lets one identity attached to both
-	// WireGuard and AmneziaWG carry two genuinely different addresses in a
-	// single Create/Update call instead of the shared AllowedIPs field
-	// being broadcast to every attached tunnel inbound. Absent/unset for a
-	// given inbound id falls back to the shared AllowedIPs exactly as
-	// before -- fully backward compatible for callers that never set this.
-	AllowedIPsByInbound map[int][]string `json:"allowedIPsByInbound,omitempty"`
-	PreSharedKey        string           `json:"preSharedKey,omitempty"`
-	KeepAlive           *int             `json:"keepAlive,omitempty"`      // Seconds between PersistentKeepalive packets; 0 sends none, omit to keep the stored value
-	ForwardedPorts      string           `json:"forwardedPorts,omitempty"` // AmneziaWG per-client port-forwarding spec, e.g. "80,443,8000-8100"
-	Secret              string           `json:"secret,omitempty" example:"ee1234567890abcdef1234567890abcd7777772e636c6f7564666c6172652e636f6d"`
-	AdTag               string           `json:"adTag,omitempty" example:"0123456789abcdef0123456789abcdef"`
-	Email               string           `json:"email"`                        // Client email identifier
-	LimitIP             int              `json:"limitIp"`                      // IP limit for this client
-	TotalGB             int64            `json:"totalGB" form:"totalGB"`       // Total traffic limit in GB
-	ExpiryTime          int64            `json:"expiryTime" form:"expiryTime"` // Expiration timestamp
-	Enable              bool             `json:"enable" form:"enable"`         // Whether the client is enabled
-	TgID                int64            `json:"tgId" form:"tgId"`             // Telegram user ID for notifications
-	SubID               string           `json:"subId" form:"subId"`           // Subscription identifier
-	Group               string           `json:"group,omitempty" form:"group"` // Logical grouping label
-	Comment             string           `json:"comment" form:"comment"`       // Client comment
-	Reset               int              `json:"reset" form:"reset"`           // Reset period in days
-	ResetDay            int              `json:"resetDay" form:"resetDay"`     // Calendar renewal day 1-31, 0 = interval mode
-	ResetMax            int              `json:"resetMax" form:"resetMax"`     // Max auto-renew count, 0 = unlimited
-	// Per-client traffic reset cycle, independent of the inbound's own (#5497).
-	TrafficReset    string `json:"trafficReset,omitempty" form:"trafficReset" validate:"omitempty,oneof=never hourly daily weekly monthly"`
-	TrafficResetDay int    `json:"trafficResetDay,omitempty" form:"trafficResetDay" validate:"omitempty,gte=1,lte=31"`
-	CreatedAt       int64  `json:"created_at,omitempty"` // Creation timestamp
-	UpdatedAt       int64  `json:"updated_at,omitempty"` // Last update timestamp
+	ID           string         `json:"id,omitempty"`           // Unique client identifier
+	Security     string         `json:"security"`               // Security method
+	Password     string         `json:"password,omitempty"`     // Client password
+	Flow         string         `json:"flow,omitempty"`         // Flow control
+	Reverse      *ClientReverse `json:"reverse,omitempty"`      // Reverse proxy settings
+	Auth         string         `json:"auth,omitempty"`         // Authentication password
+	PrivateKey   string         `json:"privateKey,omitempty"`   // WireGuard private key
+	PublicKey    string         `json:"publicKey,omitempty"`    // WireGuard public key
+	AllowedIPs   []string       `json:"allowedIPs,omitempty"`   // WireGuard allowed IPs
+	PreSharedKey string         `json:"preSharedKey,omitempty"` // WireGuard pre-shared key
+	KeepAlive    int            `json:"keepAlive,omitempty"`    // WireGuard persistent keepalive
+	Secret       string         `json:"secret,omitempty" example:"ee1234567890abcdef1234567890abcd7777772e636c6f7564666c6172652e636f6d"`
+	AdTag        string         `json:"adTag,omitempty" example:"0123456789abcdef0123456789abcdef"`
+	Email        string         `json:"email"`                        // Client email identifier
+	ClientGuid   string         `json:"clientGuid,omitempty"`         // Stable logical-client identity; independent of protocol credentials/email
+	LimitIP      int            `json:"limitIp"`                      // Concurrent IP limit; 0 means unlimited
+	UploadMbps   int            `json:"uploadMbps"`                   // Aggregate upload limit in Mbps; 0 means unlimited
+	DownloadMbps int            `json:"downloadMbps"`                 // Aggregate download limit in Mbps; 0 means unlimited
+	TotalGB      int64          `json:"totalGB" form:"totalGB"`       // Total traffic limit in GB
+	ExpiryTime   int64          `json:"expiryTime" form:"expiryTime"` // Expiration timestamp
+	Enable       bool           `json:"enable" form:"enable"`         // Whether the client is enabled
+	TgID         int64          `json:"tgId" form:"tgId"`             // Telegram user ID for notifications
+	SubID        string         `json:"subId" form:"subId"`           // Subscription identifier
+	Group        string         `json:"group,omitempty" form:"group"` // Logical grouping label
+	Comment      string         `json:"comment" form:"comment"`       // Client comment
+	Reset        int            `json:"reset" form:"reset"`           // Reset period in days
+	CreatedAt    int64          `json:"created_at,omitempty"`         // Creation timestamp
+	UpdatedAt    int64          `json:"updated_at,omitempty"`         // Last update timestamp
 }
 
 type ClientRecord struct {
-	Id              int    `json:"id" gorm:"primaryKey;autoIncrement"`
-	Email           string `json:"email" gorm:"uniqueIndex;not null"`
-	SubID           string `json:"subId" gorm:"index;column:sub_id"`
-	UUID            string `json:"uuid" gorm:"column:uuid"`
-	Password        string `json:"password"`
-	Auth            string `json:"auth"`
-	Flow            string `json:"flow"`
-	Security        string `json:"security"`
-	Reverse         string `json:"reverse" gorm:"column:reverse"`
-	PrivateKey      string `json:"privateKey" gorm:"column:wg_private_key"`
-	PublicKey       string `json:"publicKey" gorm:"column:wg_public_key"`
-	AllowedIPs      string `json:"allowedIPs" gorm:"column:wg_allowed_ips"`
-	PreSharedKey    string `json:"preSharedKey" gorm:"column:wg_pre_shared_key"`
-	KeepAlive       int    `json:"keepAlive" gorm:"column:wg_keep_alive;default:0"`
-	ForwardedPorts  string `json:"forwardedPorts" gorm:"column:wg_forwarded_ports"`
-	Secret          string `json:"secret" gorm:"column:secret"`
-	AdTag           string `json:"adTag" gorm:"column:ad_tag;default:''"`
-	LimitIP         int    `json:"limitIp" gorm:"column:limit_ip"`
-	LimitHwid       int    `json:"limitHwid" gorm:"column:limit_hwid;default:0"`
-	TotalGB         int64  `json:"totalGB" gorm:"column:total_gb"`
-	ExpiryTime      int64  `json:"expiryTime" gorm:"column:expiry_time"`
-	Enable          bool   `json:"enable" gorm:"default:true"`
-	TgID            int64  `json:"tgId" gorm:"column:tg_id;index:idx_clients_tg_id"`
-	Group           string `json:"group" gorm:"column:group_name;default:'';index:idx_client_record_group"`
-	Comment         string `json:"comment"`
-	Reset           int    `json:"reset" gorm:"default:0"`
-	ResetDay        int    `json:"resetDay" gorm:"column:reset_day;default:0"`
-	ResetMax        int    `json:"resetMax" gorm:"column:reset_max;default:0"`
-	TrafficReset    string `json:"trafficReset" gorm:"column:traffic_reset;default:never;index:idx_clients_traffic_reset"`
-	TrafficResetDay int    `json:"trafficResetDay" gorm:"column:traffic_reset_day;default:1"`
-	CreatedAt       int64  `json:"createdAt" gorm:"autoCreateTime:milli"`
-	UpdatedAt       int64  `json:"updatedAt" gorm:"autoUpdateTime:milli"`
-	// Owned solely by the node-snapshot sweep, which soft-orphans instead of
-	// deleting; orphans from any other cause stay at zero and are never reaped.
-	SyncOrphanedAt int64 `json:"-" gorm:"column:sync_orphaned_at;default:0"`
+	Id                     int    `json:"id" gorm:"primaryKey;autoIncrement"`
+	Email                  string `json:"email" gorm:"uniqueIndex;not null"`
+	ClientGuid             string `json:"clientGuid" gorm:"column:client_guid;index:idx_clients_client_guid"`
+	SubID                  string `json:"subId" gorm:"index;column:sub_id"`
+	UUID                   string `json:"uuid" gorm:"column:uuid"`
+	Password               string `json:"password"`
+	Auth                   string `json:"auth"`
+	Flow                   string `json:"flow"`
+	Security               string `json:"security"`
+	Reverse                string `json:"reverse" gorm:"column:reverse"`
+	PrivateKey             string `json:"privateKey" gorm:"column:wg_private_key"`
+	PublicKey              string `json:"publicKey" gorm:"column:wg_public_key"`
+	AllowedIPs             string `json:"allowedIPs" gorm:"column:wg_allowed_ips"`
+	PreSharedKey           string `json:"preSharedKey" gorm:"column:wg_pre_shared_key"`
+	KeepAlive              int    `json:"keepAlive" gorm:"column:wg_keep_alive;default:0"`
+	Secret                 string `json:"secret" gorm:"column:secret"`
+	AdTag                  string `json:"adTag" gorm:"column:ad_tag;default:''"`
+	LimitIP                int    `json:"limitIp" gorm:"column:limit_ip"`
+	UploadMbps             int    `json:"uploadMbps" gorm:"column:upload_mbps;default:0"`
+	DownloadMbps           int    `json:"downloadMbps" gorm:"column:download_mbps;default:0"`
+	TotalGB                int64  `json:"totalGB" gorm:"column:total_gb"`
+	ExpiryTime             int64  `json:"expiryTime" gorm:"column:expiry_time"`
+	Enable                 bool   `json:"enable" gorm:"default:true"`
+	TgID                   int64  `json:"tgId" gorm:"column:tg_id"`
+	Group                  string `json:"group" gorm:"column:group_name;default:'';index:idx_client_record_group"`
+	Comment                string `json:"comment"`
+	Reset                  int    `json:"reset" gorm:"default:0"`
+	OwnerAdminId           int    `json:"ownerAdminId" gorm:"column:owner_admin_id;index;default:0"`
+	DisabledByOwnerAdminId int    `json:"disabledByOwnerAdminId" gorm:"column:disabled_by_owner_admin_id;index;default:0"`
+	CreatedByAdminId       int    `json:"createdByAdminId" gorm:"column:created_by_admin_id;index;default:0"`
+	CreatedAt              int64  `json:"createdAt" gorm:"autoCreateTime:milli"`
+	UpdatedAt              int64  `json:"updatedAt" gorm:"autoUpdateTime:milli"`
 }
 
 func (ClientRecord) TableName() string { return "clients" }
@@ -1005,20 +953,6 @@ type ClientInbound struct {
 
 func (ClientInbound) TableName() string { return "client_inbounds" }
 
-type ClientHwid struct {
-	Id          int    `json:"id" gorm:"primaryKey;autoIncrement"`
-	SubID       string `json:"subId" gorm:"column:sub_id;not null;index;uniqueIndex:idx_client_hwids_sub_hash,priority:1"`
-	HwidHash    string `json:"-" gorm:"column:hwid_hash;size:64;not null;uniqueIndex:idx_client_hwids_sub_hash,priority:2"`
-	FirstSeen   int64  `json:"firstSeen" gorm:"column:first_seen;not null"`
-	LastSeen    int64  `json:"lastSeen" gorm:"column:last_seen;not null;index"`
-	UserAgent   string `json:"userAgent" gorm:"column:user_agent"`
-	DeviceOS    string `json:"deviceOs" gorm:"column:device_os"`
-	OsVersion   string `json:"osVersion" gorm:"column:os_version"`
-	DeviceModel string `json:"deviceModel" gorm:"column:device_model"`
-}
-
-func (ClientHwid) TableName() string { return "client_hwids" }
-
 // ClientExternalLink is a per-client entry surfaced in the client's
 // subscription. Two kinds:
 //   - "link": a single third-party share link (vless://, vmess://, trojan://,
@@ -1027,18 +961,13 @@ func (ClientHwid) TableName() string { return "client_hwids" }
 //   - "subscription": a remote subscription URL. The panel fetches it (cached),
 //     decodes its links, and merges them into the client's subscription.
 type ClientExternalLink struct {
-	Id             int    `json:"id" gorm:"primaryKey;autoIncrement"`
-	ClientId       int    `json:"clientId" gorm:"index;column:client_id"`
-	Kind           string `json:"kind" gorm:"column:kind"`
-	Value          string `json:"value" gorm:"column:value"`
-	Remark         string `json:"remark" gorm:"column:remark"`
-	Enable         *bool  `json:"enable" gorm:"column:enable;default:true"`
-	ExpiryTime     int64  `json:"expiryTime" gorm:"column:expiry_time;default:0"`
-	NamePrefix     string `json:"namePrefix" gorm:"column:name_prefix"`
-	LastFetchAt    int64  `json:"lastFetchAt" gorm:"column:last_fetch_at;default:0"`
-	LastFetchError string `json:"lastFetchError" gorm:"column:last_fetch_error"`
-	SortIndex      int    `json:"sortIndex" gorm:"column:sort_index"`
-	CreatedAt      int64  `json:"createdAt" gorm:"autoCreateTime:milli"`
+	Id        int    `json:"id" gorm:"primaryKey;autoIncrement"`
+	ClientId  int    `json:"clientId" gorm:"index;column:client_id"`
+	Kind      string `json:"kind" gorm:"column:kind"`
+	Value     string `json:"value" gorm:"column:value"`
+	Remark    string `json:"remark" gorm:"column:remark"`
+	SortIndex int    `json:"sortIndex" gorm:"column:sort_index"`
+	CreatedAt int64  `json:"createdAt" gorm:"autoCreateTime:milli"`
 }
 
 func (ClientExternalLink) TableName() string { return "client_external_links" }
@@ -1083,7 +1012,6 @@ type Host struct {
 	Path                   string   `json:"path" form:"path"`
 	Alpn                   []string `json:"alpn" form:"alpn" gorm:"serializer:json"`
 	Fingerprint            string   `json:"fingerprint" form:"fingerprint"`
-	CipherSuites           string   `json:"cipherSuites" form:"cipherSuites" gorm:"column:cipher_suites"`
 	OverrideSniFromAddress bool     `json:"overrideSniFromAddress" form:"overrideSniFromAddress" gorm:"column:override_sni_from_address"`
 	KeepSniBlank           bool     `json:"keepSniBlank" form:"keepSniBlank" gorm:"column:keep_sni_blank"`
 	PinnedPeerCertSha256   []string `json:"pinnedPeerCertSha256" form:"pinnedPeerCertSha256" gorm:"serializer:json;column:pinned_peer_cert_sha256"`
@@ -1115,59 +1043,36 @@ type Host struct {
 
 func (Host) TableName() string { return "hosts" }
 
-// KeepAliveSeconds is the client's PersistentKeepalive, 0 when unset.
-func (c Client) KeepAliveSeconds() int {
-	if c.KeepAlive == nil {
-		return 0
-	}
-	return *c.KeepAlive
-}
-
-// KeepAlivePtr wraps an explicit PersistentKeepalive, 0 included -- distinct
-// from a nil KeepAlive, which means the field was never sent.
-func KeepAlivePtr(v int) *int { return &v }
-
-// nonZeroKeepAlive keeps a stored 0 nil: wg_keep_alive cannot tell "off" from
-// "never set", and an explicit 0 would emit keepAlive on every protocol.
-func nonZeroKeepAlive(seconds int) *int {
-	if seconds <= 0 {
-		return nil
-	}
-	return KeepAlivePtr(seconds)
-}
-
 func (c *Client) ToRecord() *ClientRecord {
 	rec := &ClientRecord{
-		Email:           c.Email,
-		SubID:           c.SubID,
-		UUID:            c.ID,
-		Password:        c.Password,
-		Auth:            c.Auth,
-		Flow:            c.Flow,
-		Security:        c.Security,
-		LimitIP:         c.LimitIP,
-		TotalGB:         c.TotalGB,
-		ExpiryTime:      c.ExpiryTime,
-		Enable:          c.Enable,
-		TgID:            c.TgID,
-		Group:           c.Group,
-		Comment:         c.Comment,
-		Reset:           c.Reset,
-		ResetDay:        c.ResetDay,
-		ResetMax:        c.ResetMax,
-		TrafficReset:    c.TrafficReset,
-		TrafficResetDay: c.TrafficResetDay,
-		CreatedAt:       c.CreatedAt,
-		UpdatedAt:       c.UpdatedAt,
+		Email:        c.Email,
+		ClientGuid:   c.ClientGuid,
+		SubID:        c.SubID,
+		UUID:         c.ID,
+		Password:     c.Password,
+		Auth:         c.Auth,
+		Flow:         c.Flow,
+		Security:     c.Security,
+		LimitIP:      c.LimitIP,
+		UploadMbps:   c.UploadMbps,
+		DownloadMbps: c.DownloadMbps,
+		TotalGB:      c.TotalGB,
+		ExpiryTime:   c.ExpiryTime,
+		Enable:       c.Enable,
+		TgID:         c.TgID,
+		Group:        c.Group,
+		Comment:      c.Comment,
+		Reset:        c.Reset,
+		CreatedAt:    c.CreatedAt,
+		UpdatedAt:    c.UpdatedAt,
 
-		PrivateKey:     c.PrivateKey,
-		PublicKey:      c.PublicKey,
-		AllowedIPs:     strings.Join(c.AllowedIPs, ","),
-		PreSharedKey:   c.PreSharedKey,
-		KeepAlive:      c.KeepAliveSeconds(),
-		ForwardedPorts: c.ForwardedPorts,
-		Secret:         c.Secret,
-		AdTag:          c.AdTag,
+		PrivateKey:   c.PrivateKey,
+		PublicKey:    c.PublicKey,
+		AllowedIPs:   strings.Join(c.AllowedIPs, ","),
+		PreSharedKey: c.PreSharedKey,
+		KeepAlive:    c.KeepAlive,
+		Secret:       c.Secret,
+		AdTag:        c.AdTag,
 	}
 	if c.Reverse != nil {
 		if b, err := json.Marshal(c.Reverse); err == nil {
@@ -1196,36 +1101,34 @@ func splitWireguardAllowedIPs(csv string) []string {
 
 func (r *ClientRecord) ToClient() *Client {
 	c := &Client{
-		ID:              r.UUID,
-		Email:           r.Email,
-		SubID:           r.SubID,
-		Password:        r.Password,
-		Auth:            r.Auth,
-		Flow:            r.Flow,
-		Security:        r.Security,
-		LimitIP:         r.LimitIP,
-		TotalGB:         r.TotalGB,
-		ExpiryTime:      r.ExpiryTime,
-		Enable:          r.Enable,
-		TgID:            r.TgID,
-		Group:           r.Group,
-		Comment:         r.Comment,
-		Reset:           r.Reset,
-		ResetDay:        r.ResetDay,
-		ResetMax:        r.ResetMax,
-		TrafficReset:    r.TrafficReset,
-		TrafficResetDay: r.TrafficResetDay,
-		CreatedAt:       r.CreatedAt,
-		UpdatedAt:       r.UpdatedAt,
+		ID:           r.UUID,
+		Email:        r.Email,
+		ClientGuid:   r.ClientGuid,
+		SubID:        r.SubID,
+		Password:     r.Password,
+		Auth:         r.Auth,
+		Flow:         r.Flow,
+		Security:     r.Security,
+		LimitIP:      r.LimitIP,
+		UploadMbps:   r.UploadMbps,
+		DownloadMbps: r.DownloadMbps,
+		TotalGB:      r.TotalGB,
+		ExpiryTime:   r.ExpiryTime,
+		Enable:       r.Enable,
+		TgID:         r.TgID,
+		Group:        r.Group,
+		Comment:      r.Comment,
+		Reset:        r.Reset,
+		CreatedAt:    r.CreatedAt,
+		UpdatedAt:    r.UpdatedAt,
 
-		PrivateKey:     r.PrivateKey,
-		PublicKey:      r.PublicKey,
-		AllowedIPs:     splitWireguardAllowedIPs(r.AllowedIPs),
-		PreSharedKey:   r.PreSharedKey,
-		KeepAlive:      nonZeroKeepAlive(r.KeepAlive),
-		ForwardedPorts: r.ForwardedPorts,
-		Secret:         r.Secret,
-		AdTag:          r.AdTag,
+		PrivateKey:   r.PrivateKey,
+		PublicKey:    r.PublicKey,
+		AllowedIPs:   splitWireguardAllowedIPs(r.AllowedIPs),
+		PreSharedKey: r.PreSharedKey,
+		KeepAlive:    r.KeepAlive,
+		Secret:       r.Secret,
+		AdTag:        r.AdTag,
 	}
 	if r.Reverse != "" {
 		var rev ClientReverse
@@ -1249,8 +1152,6 @@ type OutboundSubscription struct {
 	Url                  string `json:"url" form:"url"`
 	Enabled              bool   `json:"enabled" form:"enabled" gorm:"default:true"`
 	AllowPrivate         bool   `json:"allowPrivate" form:"allowPrivate" gorm:"default:false"`
-	AllowInsecure        bool   `json:"allowInsecure" form:"allowInsecure" gorm:"default:false"`
-	UserAgent            string `json:"userAgent" form:"userAgent"`
 	TagPrefix            string `json:"tagPrefix" form:"tagPrefix"`
 	UpdateInterval       int    `json:"updateInterval" form:"updateInterval" gorm:"default:600"` // seconds between refreshes
 	Priority             int    `json:"priority" form:"priority" gorm:"default:0"`               // order among subscriptions in the merged outbounds (lower = earlier)
@@ -1262,24 +1163,6 @@ type OutboundSubscription struct {
 	CreatedAt            int64  `json:"createdAt" gorm:"autoCreateTime:milli"`
 	UpdatedAt            int64  `json:"updatedAt" gorm:"autoUpdateTime:milli"`
 	OutboundCount        int    `json:"outboundCount" gorm:"-"`
-}
-
-// SubBalancer is one extra JSON-subscription config document whose members are
-// the selected inbounds' proxy outbounds. SortOrder shares SubSortIndex semantics.
-type SubBalancer struct {
-	Id         int    `json:"id" form:"id" gorm:"primaryKey;autoIncrement" example:"1"`
-	Remark     string `json:"remark" form:"remark" validate:"required,max=256" example:"auto-fastest"`
-	Strategy   string `json:"strategy" form:"strategy" validate:"omitempty,oneof=leastLoad leastPing random roundRobin" example:"random"`
-	InboundIds []int  `json:"inboundIds" form:"inboundIds" gorm:"serializer:json;column:inbound_ids" example:"[1,3]"`
-	// inboundId -> leastLoad weight; absent entries mean 1.0. Only meaningful
-	// with Strategy "leastLoad" — xray ignores costs on every other strategy.
-	MemberWeights map[int]float64 `json:"memberWeights,omitempty" form:"memberWeights" gorm:"serializer:json;column:member_weights"`
-	SortOrder     int             `json:"sortOrder" form:"sortOrder" gorm:"column:sort_order" validate:"omitempty,gte=1" example:"1"`
-	// No gorm default:true — a bool default makes an explicit false at insert
-	// collapse back to the column default (zero value is skipped).
-	Enabled   bool  `json:"enabled" form:"enabled" example:"true"`
-	CreatedAt int64 `json:"createdAt" gorm:"autoCreateTime:milli" example:"1710000000000"`
-	UpdatedAt int64 `json:"updatedAt" gorm:"autoUpdateTime:milli" example:"1710000000000"`
 }
 
 func MergeClientRecord(existing *ClientRecord, incoming *ClientRecord) []ClientMergeConflict {
@@ -1294,6 +1177,15 @@ func MergeClientRecord(existing *ClientRecord, incoming *ClientRecord) []ClientM
 
 	incomingNewer := incoming.UpdatedAt > existing.UpdatedAt ||
 		(incoming.UpdatedAt == existing.UpdatedAt && incoming.CreatedAt > existing.CreatedAt)
+
+	// ClientGuid is identity, not mutable profile data. Adopt it only when the
+	// canonical row predates the field; never let an inbound snapshot rotate an
+	// already-established logical identity.
+	if existing.ClientGuid == "" && incoming.ClientGuid != "" {
+		existing.ClientGuid = incoming.ClientGuid
+	} else if existing.ClientGuid != "" && incoming.ClientGuid != "" && existing.ClientGuid != incoming.ClientGuid {
+		keep("clientGuid", existing.ClientGuid, incoming.ClientGuid, existing.ClientGuid)
+	}
 
 	if existing.UUID != incoming.UUID && incoming.UUID != "" {
 		if incomingNewer || existing.UUID == "" {
@@ -1361,14 +1253,24 @@ func MergeClientRecord(existing *ClientRecord, incoming *ClientRecord) []ClientM
 			existing.LimitIP = picked
 		}
 	}
-	if existing.LimitHwid != incoming.LimitHwid && incoming.LimitHwid != 0 {
-		picked := existing.LimitHwid
-		if existing.LimitHwid == 0 || incoming.LimitHwid > existing.LimitHwid {
-			picked = incoming.LimitHwid
+	if existing.UploadMbps != incoming.UploadMbps && incoming.UploadMbps != 0 {
+		picked := existing.UploadMbps
+		if existing.UploadMbps == 0 || incoming.UploadMbps < existing.UploadMbps {
+			picked = incoming.UploadMbps
 		}
-		if picked != existing.LimitHwid {
-			keep("limitHwid", existing.LimitHwid, incoming.LimitHwid, picked)
-			existing.LimitHwid = picked
+		if picked != existing.UploadMbps {
+			keep("uploadMbps", existing.UploadMbps, incoming.UploadMbps, picked)
+			existing.UploadMbps = picked
+		}
+	}
+	if existing.DownloadMbps != incoming.DownloadMbps && incoming.DownloadMbps != 0 {
+		picked := existing.DownloadMbps
+		if existing.DownloadMbps == 0 || incoming.DownloadMbps < existing.DownloadMbps {
+			picked = incoming.DownloadMbps
+		}
+		if picked != existing.DownloadMbps {
+			keep("downloadMbps", existing.DownloadMbps, incoming.DownloadMbps, picked)
+			existing.DownloadMbps = picked
 		}
 	}
 	if existing.TgID != incoming.TgID && incoming.TgID != 0 {
@@ -1381,30 +1283,6 @@ func MergeClientRecord(existing *ClientRecord, incoming *ClientRecord) []ClientM
 		if incomingNewer || existing.Reset == 0 {
 			keep("reset", existing.Reset, incoming.Reset, incoming.Reset)
 			existing.Reset = incoming.Reset
-		}
-	}
-	if existing.ResetDay != incoming.ResetDay && incoming.ResetDay != 0 {
-		if incomingNewer || existing.ResetDay == 0 {
-			keep("resetDay", existing.ResetDay, incoming.ResetDay, incoming.ResetDay)
-			existing.ResetDay = incoming.ResetDay
-		}
-	}
-	if existing.ResetMax != incoming.ResetMax && incoming.ResetMax != 0 {
-		if incomingNewer || existing.ResetMax == 0 {
-			keep("resetMax", existing.ResetMax, incoming.ResetMax, incoming.ResetMax)
-			existing.ResetMax = incoming.ResetMax
-		}
-	}
-	if existing.TrafficReset != incoming.TrafficReset && incoming.TrafficReset != "" {
-		if incomingNewer || existing.TrafficReset == "" {
-			keep("trafficReset", existing.TrafficReset, incoming.TrafficReset, incoming.TrafficReset)
-			existing.TrafficReset = incoming.TrafficReset
-		}
-	}
-	if existing.TrafficResetDay != incoming.TrafficResetDay && incoming.TrafficResetDay != 0 {
-		if incomingNewer || existing.TrafficResetDay == 0 {
-			keep("trafficResetDay", existing.TrafficResetDay, incoming.TrafficResetDay, incoming.TrafficResetDay)
-			existing.TrafficResetDay = incoming.TrafficResetDay
 		}
 	}
 	if existing.Reverse != incoming.Reverse && incoming.Reverse != "" {
@@ -1447,12 +1325,6 @@ func MergeClientRecord(existing *ClientRecord, incoming *ClientRecord) []ClientM
 		if incomingNewer || existing.KeepAlive == 0 {
 			keep("keepAlive", existing.KeepAlive, incoming.KeepAlive, incoming.KeepAlive)
 			existing.KeepAlive = incoming.KeepAlive
-		}
-	}
-	if existing.ForwardedPorts != incoming.ForwardedPorts && incoming.ForwardedPorts != "" {
-		if incomingNewer || existing.ForwardedPorts == "" {
-			keep("forwardedPorts", existing.ForwardedPorts, incoming.ForwardedPorts, incoming.ForwardedPorts)
-			existing.ForwardedPorts = incoming.ForwardedPorts
 		}
 	}
 	if existing.Comment != incoming.Comment && incoming.Comment != "" {

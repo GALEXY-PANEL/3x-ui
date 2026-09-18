@@ -1,4 +1,4 @@
-import { cloneElement, useId } from 'react';
+import { cloneElement } from 'react';
 import type { CSSProperties, ReactElement, ReactNode } from 'react';
 import { Controller } from 'react-hook-form';
 import type { Control, ControllerProps, FieldValues, Path } from 'react-hook-form';
@@ -48,9 +48,6 @@ export function FormField<T extends FieldValues = FieldValues>({
 }: FormFieldProps<T>) {
   const { t } = useTranslation();
   const dottedName = toDotted(name) as Path<T>;
-  const generatedId = useId();
-  const explicitId = (children as ReactElement<{ id?: string }>).props.id;
-  const fieldId = explicitId ?? generatedId;
 
   return (
     <Controller
@@ -63,7 +60,6 @@ export function FormField<T extends FieldValues = FieldValues>({
           ? t(fieldState.error.message, { defaultValue: fieldState.error.message })
           : undefined;
         const childProps: Record<string, unknown> = {
-          id: fieldId,
           [valueProp]: displayValue,
           onChange: (...args: unknown[]) => {
             const raw = normalizeAntdOnChange(args, valueProp);
@@ -77,7 +73,6 @@ export function FormField<T extends FieldValues = FieldValues>({
         return (
           <Form.Item
             label={label}
-            htmlFor={label ? fieldId : undefined}
             tooltip={tooltip}
             extra={extra}
             required={required}

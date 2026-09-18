@@ -1,4 +1,4 @@
-// Pure validation + templating helpers for 3x-ui's Telegram bot settings.
+// Pure validation + templating helpers for Heimdall's Telegram bot settings.
 // Grounded in internal/web/service/tgbot/tgbot.go (admin ids parsed with
 // strconv.ParseInt(_,10,64); token handed to telego.NewBot → api.telegram.org)
 // and the panel's tg* settings (tgRunTime uses robfig/cron). No React/DOM.
@@ -43,10 +43,7 @@ export function validateBotToken(token: string): TokenValidation {
 export function parseAdminIds(raw: string): AdminIdsResult {
   const ids: number[] = [];
   const invalid: string[] = [];
-  for (const part of raw
-    .split(',')
-    .map((s) => s.trim())
-    .filter(Boolean)) {
+  for (const part of raw.split(',').map((s) => s.trim()).filter(Boolean)) {
     // Telegram chat ids are integers; group/channel ids are negative.
     if (/^-?\d+$/.test(part)) ids.push(Number(part));
     else invalid.push(part);

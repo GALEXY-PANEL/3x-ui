@@ -18,12 +18,7 @@ describe('buildBalancer', () => {
   });
 
   it('includes fallbackTag when set', () => {
-    const b = buildBalancer({
-      tag: 'lb',
-      selector: ['a'],
-      strategy: 'random',
-      fallbackTag: 'direct',
-    });
+    const b = buildBalancer({ tag: 'lb', selector: ['a'], strategy: 'random', fallbackTag: 'direct' });
     expect(b.fallbackTag).toBe('direct');
   });
 });

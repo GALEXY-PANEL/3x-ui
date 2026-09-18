@@ -1,6 +1,7 @@
 package service
 
 import (
+	"strings"
 	"time"
 
 	"github.com/GALEXY-PANEL/3x-ui/v3/internal/database"
@@ -16,7 +17,7 @@ func (s *ClientService) ResetTrafficByEmail(inboundSvc *InboundService, email st
 	if email == "" {
 		return false, common.NewError("client email is required")
 	}
-	rec, err := s.GetRecordByEmail(nil, email)
+	rec, err := s.RequireVisibleClientByEmail(email)
 	if err != nil {
 		return false, err
 	}
@@ -26,62 +27,81 @@ func (s *ClientService) ResetTrafficByEmail(inboundSvc *InboundService, email st
 	}
 
 	needRestart := false
+
+	// Reset exhausted quota counters before re-enabling the logical client.
+	//
+	// Re-enabling first exposed a transient state where client_traffics.enable
+	// was true while up+down was still at or above total. The serialized traffic
+	// poll could observe that state and immediately disable the client again.
+	// This is especially visible for clients attached to multiple inbounds,
+	// because Update touches each inbound before the later traffic reset.
+	if len(inboundIds) == 0 {
+		if rErr := inboundSvc.ResetClientTrafficByEmail(email); rErr != nil {
+			return false, rErr
+		}
+	} else {
+		for _, ibId := range inboundIds {
+			nr, rErr := inboundSvc.ResetClientTraffic(ibId, email)
+			if rErr != nil {
+				return needRestart, rErr
+			}
+			if nr {
+				needRestart = true
+			}
+		}
+	}
+
 	if !rec.Enable {
 		updated := rec.ToClient()
 		updated.Enable = true
-		nr, uErr := s.Update(inboundSvc, rec.Id, *updated, rec.LimitHwid)
+		nr, uErr := s.Update(inboundSvc, rec.Id, *updated)
 		if uErr != nil {
-			logger.Warning("Failed to auto-enable client during traffic reset:", uErr)
+			logger.Warning("Failed to auto-enable client after traffic reset:", uErr)
+			return needRestart, uErr
 		}
 		if nr {
 			needRestart = true
 		}
 	}
 
-	if len(inboundIds) == 0 {
-		if rErr := inboundSvc.ResetClientTrafficByEmail(email); rErr != nil {
-			return false, rErr
-		}
-		return needRestart, nil
-	}
-
-	applies := make([]inboundApply, 0, len(inboundIds))
-	for _, ibId := range inboundIds {
-		applies = append(applies, inboundApply{id: ibId, run: func() (bool, error) {
-			return inboundSvc.ResetClientTraffic(ibId, email)
-		}})
-	}
-	nr, applyErr := fanoutInboundApplies(applies)
-	return needRestart || nr, applyErr
+	return needRestart, nil
 }
 
 func (s *ClientService) BulkResetTraffic(inboundSvc *InboundService, emails []string) (int, error) {
+	emails = FilterVisibleClientEmails(emails)
 	if len(emails) == 0 {
 		return 0, nil
 	}
-	cleanEmails := trimmedUniqueEmails(emails)
+	seen := map[string]struct{}{}
+	cleanEmails := make([]string, 0, len(emails))
+	for _, e := range emails {
+		e = strings.TrimSpace(e)
+		if e == "" {
+			continue
+		}
+		if _, ok := seen[e]; ok {
+			continue
+		}
+		seen[e] = struct{}{}
+		cleanEmails = append(cleanEmails, e)
+	}
 	if len(cleanEmails) == 0 {
 		return 0, nil
 	}
 
-	recordsByEmail, err := clientRecordsByEmail(nil, cleanEmails)
-	if err != nil {
-		return 0, err
-	}
 	for _, e := range cleanEmails {
-		rec := recordsByEmail[e]
-		if rec == nil || rec.Enable {
-			continue
-		}
-		updated := rec.ToClient()
-		updated.Enable = true
-		if _, uErr := s.Update(inboundSvc, rec.Id, *updated, rec.LimitHwid); uErr != nil {
-			logger.Warning("Failed to auto-enable client during bulk traffic reset:", uErr)
+		rec, err := s.GetRecordByEmail(nil, e)
+		if err == nil && !rec.Enable {
+			updated := rec.ToClient()
+			updated.Enable = true
+			if _, uErr := s.Update(inboundSvc, rec.Id, *updated); uErr != nil {
+				logger.Warning("Failed to auto-enable client during bulk traffic reset:", uErr)
+			}
 		}
 	}
 
 	affected := 0
-	err = submitTrafficWrite(func() error {
+	err := submitTrafficWrite(func() error {
 		db := database.GetDB()
 		return db.Transaction(func(tx *gorm.DB) error {
 			if err := adjustGroupBaselinesForRemovedTraffic(tx, cleanEmails); err != nil {
@@ -133,15 +153,20 @@ func (s *ClientService) resetAllClientTrafficsLocked(id int) error {
 		// as the authoritative source for which emails belong to a given inbound.
 		var resetEmails []string
 		if id == -1 {
-			if err := tx.Model(xray.ClientTraffic{}).Pluck("email", &resetEmails).Error; err != nil {
+			emailQuery := applyVisibleClientEmailScope(
+				tx.Model(xray.ClientTraffic{}),
+				"email",
+			)
+			if err := emailQuery.Pluck("email", &resetEmails).Error; err != nil {
 				return err
 			}
 		} else {
-			if err := tx.Table("client_inbounds ci").
+			emailQuery := tx.Table("client_inbounds ci").
 				Select("c.email").
 				Joins("JOIN clients c ON c.id = ci.client_id").
-				Where("ci.inbound_id = ?", id).
-				Pluck("c.email", &resetEmails).Error; err != nil {
+				Where("ci.inbound_id = ?", id)
+			emailQuery = applyVisibleClientEmailScope(emailQuery, "c.email")
+			if err := emailQuery.Pluck("c.email", &resetEmails).Error; err != nil {
 				return err
 			}
 		}
@@ -190,24 +215,21 @@ func (s *ClientService) resetAllClientTrafficsLocked(id int) error {
 }
 
 func (s *ClientService) ResetAllTraffics() (bool, error) {
-	var affected int64
-	err := submitTrafficWrite(func() error {
-		return database.GetDB().Transaction(func(tx *gorm.DB) error {
-			res := tx.Model(&xray.ClientTraffic{}).
-				Where("1 = 1").
-				Updates(map[string]any{"enable": true, "up": 0, "down": 0})
-			if res.Error != nil {
-				return res.Error
-			}
-			affected = res.RowsAffected
-			if err := tx.Where("1 = 1").Delete(&model.ClientGlobalTraffic{}).Error; err != nil {
-				return err
-			}
-			return tx.Where("1 = 1").Delete(&model.NodeClientTraffic{}).Error
-		})
-	})
-	if err != nil {
+	db := database.GetDB()
+	trafficQuery := applyVisibleClientEmailScope(
+		db.Model(&xray.ClientTraffic{}).Where("1 = 1"),
+		"email",
+	)
+	res := trafficQuery.Updates(map[string]any{"up": 0, "down": 0})
+	if res.Error != nil {
+		return false, res.Error
+	}
+	globalQuery := applyVisibleClientEmailScope(
+		db.Model(&model.ClientGlobalTraffic{}).Where("1 = 1"),
+		"email",
+	)
+	if err := globalQuery.Delete(&model.ClientGlobalTraffic{}).Error; err != nil {
 		return false, err
 	}
-	return affected > 0, nil
+	return res.RowsAffected > 0, nil
 }

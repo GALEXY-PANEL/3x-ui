@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Alert, Input, Modal, Select, Space, Table, Tag, Typography, message } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
@@ -57,20 +57,14 @@ export default function AttachClientsModal({
   const [selectedEmails, setSelectedEmails] = useState<string[]>([]);
   const [search, setSearch] = useState('');
 
-  // React resets this during render rather than in an effect so the modal's
-  // first open frame already shows cleared fields.
-  const openSource = open ? source : null;
-  const [syncedSource, setSyncedSource] = useState(openSource);
-  if (openSource !== syncedSource) {
-    setSyncedSource(openSource);
-    if (openSource) {
-      const rows = readClientRows(openSource.settings);
-      setClientRows(rows);
-      setSelectedEmails(rows.map((r) => r.email));
-      setTargetIds([]);
-      setSearch('');
-    }
-  }
+  useEffect(() => {
+    if (!open) return;
+    const rows = source ? readClientRows(source.settings) : [];
+    setClientRows(rows);
+    setSelectedEmails(rows.map((r) => r.email));
+    setTargetIds([]);
+    setSearch('');
+  }, [open, source]);
 
   const targetOptions = useMemo(() => {
     if (!source) return [];
@@ -135,9 +129,7 @@ export default function AttachClientsModal({
       const skipped = result.skipped?.length ?? 0;
       const errors = result.errors?.length ?? 0;
       if (errors > 0) {
-        messageApi.warning(
-          t('pages.inbounds.attachClientsResultMixed', { attached, skipped, errors }),
-        );
+        messageApi.warning(t('pages.inbounds.attachClientsResultMixed', { attached, skipped, errors }));
       } else {
         messageApi.success(t('pages.inbounds.attachClientsResult', { attached, skipped }));
       }
@@ -159,9 +151,7 @@ export default function AttachClientsModal({
       }}
       okText={t('pages.inbounds.attachClients')}
       cancelText={t('cancel')}
-      title={t('pages.inbounds.attachClientsTitle', {
-        remark: formatInboundLabel(source?.tag, source?.remark),
-      })}
+      title={t('pages.inbounds.attachClientsTitle', { remark: formatInboundLabel(source?.tag, source?.remark) })}
       width={680}
     >
       {messageContextHolder}
@@ -213,7 +203,7 @@ export default function AttachClientsModal({
           onChange={setTargetIds}
           options={targetOptions}
           placeholder={t('pages.inbounds.attachClientsTargets')}
-          showSearch={{ optionFilterProp: 'label' }}
+          optionFilterProp="label"
         />
       )}
     </Modal>

@@ -5,8 +5,8 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import ClientFormModal from '@/pages/clients/ClientFormModal';
 import { renderWithProviders } from './test-utils';
 
-// ClientFormModal reads server state via react-query (useFail2banStatusQuery),
-// so it needs a QueryClientProvider on top of the shared ThemeProvider wrapper.
+// ClientFormModal uses react-query-backed server state, so it needs a
+// QueryClientProvider on top of the shared ThemeProvider wrapper.
 function renderModal() {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   renderWithProviders(
@@ -24,17 +24,15 @@ function renderModal() {
 }
 
 function openCredentialsTab() {
-  const tab = Array.from(document.querySelectorAll('.ant-tabs-tab')).find(
-    (t) => (t.textContent ?? '').trim() === 'Credentials',
-  );
+  const tab = Array.from(document.querySelectorAll('.ant-tabs-tab'))
+    .find((t) => (t.textContent ?? '').trim() === 'Credentials');
   if (!tab) throw new Error('Credentials tab not found');
   fireEvent.click(tab);
 }
 
 function tooltipIconForLabel(label: string): HTMLElement {
-  const labelEl = Array.from(document.querySelectorAll('.ant-form-item-label label')).find(
-    (l) => (l.textContent ?? '').trim() === label,
-  );
+  const labelEl = Array.from(document.querySelectorAll('.ant-form-item-label label'))
+    .find((l) => (l.textContent ?? '').trim() === label);
   const item = labelEl?.closest('.ant-form-item') as HTMLElement | null;
   if (!item) throw new Error(`Form item not found for label: ${label}`);
   const tip = item.querySelector('.ant-form-item-tooltip') as HTMLElement | null;
@@ -52,7 +50,7 @@ describe('ClientFormModal credential tooltips', () => {
 
     await waitFor(() => {
       expect(document.body.textContent).toContain(
-        'Used by Trojan, Shadowsocks, and TUIC clients; ignored for VLESS, VMess, Hysteria, and WireGuard.',
+        'Only used by Trojan and Shadowsocks clients; ignored for VLESS, VMess, Hysteria, and WireGuard.',
       );
     });
   });

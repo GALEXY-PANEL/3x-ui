@@ -86,22 +86,6 @@ func (s *NodeService) ClearDescendants(nodeID int) {
 	nodeDescendantsMu.Unlock()
 }
 
-// RetainEnabledNodeDescendants drops sub-nodes learned from nodes the heartbeat no
-// longer probes: disabled ones it skips, deleted ones missing from nodes.
-func (s *NodeService) RetainEnabledNodeDescendants(nodes []*model.Node) {
-	enabled := make(map[int]bool, len(nodes))
-	for _, n := range nodes {
-		enabled[n.Id] = n.Enable
-	}
-	nodeDescendantsMu.Lock()
-	for nodeID := range nodeDescendantsCache {
-		if !enabled[nodeID] {
-			delete(nodeDescendantsCache, nodeID)
-		}
-	}
-	nodeDescendantsMu.Unlock()
-}
-
 func cachedDescendants() []model.NodeSummary {
 	nodeDescendantsMu.RLock()
 	defer nodeDescendantsMu.RUnlock()
@@ -171,14 +155,6 @@ func (s *NodeService) GetNodeTree() ([]*model.Node, error) {
 	all = append(all, transitive...)
 	s.recountByGuid(all, selfGuid)
 	return all, nil
-}
-
-func (s *NodeService) GetNodeTreeView() ([]*NodeView, error) {
-	nodes, err := s.GetNodeTree()
-	if err != nil {
-		return nil, err
-	}
-	return toNodeViews(nodes), nil
 }
 
 // recountByGuid recomputes InboundCount/OnlineCount/DepletedCount for every node

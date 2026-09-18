@@ -16,9 +16,7 @@ import (
 )
 
 const (
-	// The heartbeat's bound: at 8, 300 nodes 80ms away took 25-30s per 5s tick on SQLite
-	// and 6-9s at 32; neither SQLite nor Postgres raised lock or pool errors.
-	nodeTrafficSyncConcurrency    = 32
+	nodeTrafficSyncConcurrency    = 8
 	nodeTrafficSyncRequestTimeout = 4 * time.Second
 	nodeReconcileTimeout          = 30 * time.Second
 	nodeClientIpSyncInterval      = 10 * time.Second
@@ -50,6 +48,11 @@ type NodeTrafficSyncJob struct {
 	// noGuidIpEndpoint tracks nodes (by id) whose client-IP attribution endpoint
 	// returned 404, so an old-build node is noted once instead of every cycle.
 	noGuidIpEndpoint sync.Map
+	// Activity state/cursors are per direct node. Cursors advance only after
+	// idempotent rows have been committed locally.
+	activitySyncMu         sync.Mutex
+	activityCursors        map[int]model.ClientActivitySyncCursors
+	noActivitySyncEndpoint sync.Map
 	// prevInboundTotals holds the previous poll's cumulative up/down (and the time
 	// the counter last changed) per node inbound tag, so the next poll can derive
 	// a per-inbound speed delta — node inbounds have no local Xray poll. Touched
@@ -77,7 +80,9 @@ func (a *atomicBool) takeAndReset() bool {
 }
 
 func NewNodeTrafficSyncJob() *NodeTrafficSyncJob {
-	return &NodeTrafficSyncJob{}
+	return &NodeTrafficSyncJob{
+		activityCursors: make(map[int]model.ClientActivitySyncCursors),
+	}
 }
 
 func (j *NodeTrafficSyncJob) Run() {
@@ -96,7 +101,6 @@ func (j *NodeTrafficSyncJob) Run() {
 		logger.Warning("node traffic sync: load nodes failed:", err)
 		return
 	}
-	j.inboundService.RetainSyncedNodeOnlineClients(nodes)
 	if len(nodes) == 0 {
 		return
 	}
@@ -134,15 +138,31 @@ func (j *NodeTrafficSyncJob) Run() {
 	}
 	wg.Wait()
 
-	_, clientsDisabled, err := j.inboundService.AddTraffic(nil, nil)
+	repairNeeded, clientsDisabled, err := j.inboundService.AddTraffic(nil, nil)
 	if err != nil {
 		logger.Warning("node traffic sync: depletion check failed:", err)
+
+		if repairNeeded {
+			if repairErr := j.xrayService.RestartXray(true); repairErr != nil {
+				logger.Warning(
+					"node traffic sync: repair xray after rolled-back disable transaction failed:",
+					repairErr,
+				)
+				j.xrayService.SetToNeedRestart()
+			}
+		}
 	}
 	if clientsDisabled {
 		if restartOnDisable, settingErr := j.settingService.GetRestartXrayOnClientDisable(); settingErr == nil && restartOnDisable {
-			if err := j.xrayService.RestartXray(true); err != nil {
-				logger.Warning("node traffic sync: restart xray after disabling clients failed:", err)
-				j.xrayService.SetToNeedRestart()
+			// A remote-only depletion is a cheap no-op for the local core. If the
+			// same client also belongs to a local inbound, this immediately aligns
+			// the stored Process snapshot through hot apply. Concurrent calls are
+			// serialized by XrayService.
+			if err := j.xrayService.ReconcileXray(); err != nil {
+				logger.Warning(
+					"node traffic sync: reconcile xray after disabling clients failed:",
+					err,
+				)
 			}
 		} else if settingErr != nil {
 			logger.Warning("node traffic sync: get RestartXrayOnClientDisable failed:", settingErr)
@@ -152,10 +172,17 @@ func (j *NodeTrafficSyncJob) Run() {
 
 	j.maybePushGlobals(mgr, nodes)
 
-	// Prune stale local-online entries (no local active emails or inbound tags
-	// to add here — only the local xray poll feeds those) so a stopped local
-	// xray's clients and inbounds still age out between traffic polls.
-	j.inboundService.RefreshLocalOnlineClients(nil, nil)
+	// Prune stale grace-based local sources without touching exact Xray users.
+	// This also ages out auxiliary sidecars if their own poll temporarily fails.
+	beforePresence := j.inboundService.GetOnlineClients()
+	presenceChanged := j.inboundService.PruneLocalPresence()
+	broadcastPresenceTransition(
+		beforePresence,
+		presenceChanged,
+		j.inboundService.GetOnlineClients,
+		websocket.HasClients,
+		websocket.BroadcastPresence,
+	)
 
 	// Derive per-node-inbound speed every tick (keeps the baseline fresh even
 	// with no dashboard open); only broadcast it when someone is watching.
@@ -366,7 +393,6 @@ func (j *NodeTrafficSyncJob) syncOne(mgr *runtime.Manager, n *model.Node, doIpSy
 		return nil
 	}
 
-	justPushed := false
 	if n.ConfigDirty {
 		reconcileCtx, reconcileCancel := context.WithTimeout(context.Background(), nodeReconcileTimeout)
 		reconcileErr := j.inboundService.ReconcileNode(reconcileCtx, rt, n)
@@ -381,11 +407,13 @@ func (j *NodeTrafficSyncJob) syncOne(mgr *runtime.Manager, n *model.Node, doIpSy
 				logger.Warningf("node traffic sync: clear dirty for %s failed: %v", n.Name, clearErr)
 			}
 			j.structural.set()
-			// The snapshot below may still predate the push we just made, so its
-			// lagging lifecycle values must not merge back this tick (#6228).
-			justPushed = true
 		}
 	}
+
+	// Activity replication is independent from ordinary traffic accounting.
+	// A missing endpoint means the node is an older build; traffic sync still
+	// continues and the state is retried after that node is upgraded.
+	j.syncClientActivity(n, rt)
 
 	ctx, cancel := context.WithTimeout(context.Background(), nodeTrafficSyncRequestTimeout)
 	defer cancel()
@@ -396,8 +424,6 @@ func (j *NodeTrafficSyncJob) syncOne(mgr *runtime.Manager, n *model.Node, doIpSy
 		j.inboundService.ClearNodeOnlineClients(n.Id)
 		return nil
 	}
-	snap.ManagedAliases = rt.AdoptedInboundAliases()
-	syncCanAdopt := syncCanAdoptInbounds(n, snap.ManagedAliases)
 	service.FilterNodeSnapshot(n, snap)
 	_, _, dirty, _, _ := j.nodeService.NodeSyncState(n.Id)
 	if !dirty {
@@ -414,7 +440,7 @@ func (j *NodeTrafficSyncJob) syncOne(mgr *runtime.Manager, n *model.Node, doIpSy
 			}
 		}
 	}
-	changed, err := j.inboundService.SetRemoteTraffic(n.Id, snap, dirty, justPushed)
+	changed, err := j.inboundService.SetRemoteTraffic(n.Id, snap, dirty)
 	if err != nil {
 		logger.Warningf("node traffic sync: merge for %s failed: %v", n.Name, err)
 		return nil
@@ -422,7 +448,7 @@ func (j *NodeTrafficSyncJob) syncOne(mgr *runtime.Manager, n *model.Node, doIpSy
 	if changed {
 		j.structural.set()
 	}
-	if !dirty && n.InboundsAdoptedAt == 0 && syncCanAdopt {
+	if !dirty && n.InboundsAdoptedAt == 0 {
 		if markErr := j.nodeService.MarkNodeInboundsAdopted(n.Id); markErr != nil {
 			logger.Warningf("node traffic sync: mark inbounds adopted for %s failed: %v", n.Name, markErr)
 		}
@@ -450,7 +476,7 @@ func (j *NodeTrafficSyncJob) syncOne(mgr *runtime.Manager, n *model.Node, doIpSy
 		logger.Warningf("node traffic sync: fetch client ips from %s failed: %v", n.Name, err)
 	}
 
-	masterIps, err := j.inboundService.GetNodeInboundClientIps(n.Id)
+	masterIps, err := j.inboundService.GetAllInboundClientIps()
 	if err != nil {
 		logger.Warningf("node traffic sync: load client ips for push to %s failed: %v", n.Name, err)
 		return active
@@ -482,13 +508,4 @@ func (j *NodeTrafficSyncJob) syncOne(mgr *runtime.Manager, n *model.Node, doIpSy
 		}
 	}
 	return active
-}
-
-// Whether this sync can perform the "first clean adoption" that
-// InboundsAdoptedAt records (#6283).
-func syncCanAdoptInbounds(n *model.Node, adoptedAliases []string) bool {
-	if n == nil || n.InboundSyncMode != "selected" {
-		return true
-	}
-	return len(n.InboundTags) > 0 || len(adoptedAliases) > 0
 }

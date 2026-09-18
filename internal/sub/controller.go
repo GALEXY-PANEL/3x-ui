@@ -4,30 +4,23 @@ import (
 	"bytes"
 	"encoding/base64"
 	"encoding/json"
-	"errors"
 	"fmt"
+	"github.com/GALEXY-PANEL/3x-ui/v3/internal/database"
 	"html/template"
-	"io/fs"
+	"math"
 	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
-	"unicode"
 
 	"github.com/gin-gonic/gin"
 
 	"github.com/GALEXY-PANEL/3x-ui/v3/internal/logger"
 	"github.com/GALEXY-PANEL/3x-ui/v3/internal/web/service"
-)
-
-const (
-	subMihomoPath      = "/mihomo/"
-	subClashLegacyPath = "/clash-legacy/"
 )
 
 // writeSubError translates a service-layer result into an HTTP response.
@@ -42,6 +35,47 @@ func writeSubError(c *gin.Context, err error) {
 	c.Status(http.StatusInternalServerError)
 }
 
+// splitSubscriptionInfoItems expands multi-line subscription entries for rich
+// HTML templates. Raw subscription responses intentionally keep their existing
+// behavior; this is only used by /sub/:subid/info so each profile appears as a
+// separate row in templates such as Ourenus.
+func splitSubscriptionInfoItems(items []string, emails []string) ([]string, []string) {
+	if len(items) == 0 {
+		return items, emails
+	}
+
+	flattenedItems := make([]string, 0, len(items))
+	flattenedEmails := make([]string, 0, len(items))
+
+	for index, item := range items {
+		normalized := strings.ReplaceAll(item, "\r\n", "\n")
+		normalized = strings.ReplaceAll(normalized, "\r", "\n")
+
+		parts := strings.Split(normalized, "\n")
+		email := ""
+		if index < len(emails) {
+			email = emails[index]
+		}
+
+		for _, part := range parts {
+			part = strings.TrimSpace(part)
+			if part == "" {
+				continue
+			}
+			flattenedItems = append(flattenedItems, part)
+			if len(emails) > 0 {
+				flattenedEmails = append(flattenedEmails, email)
+			}
+		}
+	}
+
+	if len(flattenedItems) == 0 {
+		return items, emails
+	}
+
+	return flattenedItems, flattenedEmails
+}
+
 // cachedSubTemplate holds a parsed custom subscription template together with
 // the modification time of the file it was parsed from, so the cache can be
 // invalidated when an admin edits the template on disk.
@@ -52,267 +86,84 @@ type cachedSubTemplate struct {
 
 // SUBController handles HTTP requests for subscription links and JSON configurations.
 type SUBController struct {
-	subTitle            string
-	subSupportUrl       string
-	subProfileMode      string
-	subProfileUrl       string
-	subAnnounce         string
-	subEnableRouting    bool
-	subRoutingRules     string
-	subJsonRoutingRules string
-	subHideSettings     bool
-	happConfig          HappConfig
+	subTitle         string
+	subSupportUrl    string
+	subProfileUrl    string
+	subAnnounce      string
+	subEnableRouting bool
+	subRoutingRules  string
+	subHideSettings  bool
 
 	subIncyEnableRouting bool
 	subIncyRoutingRules  string
 
-	subPath            string
-	subJsonPath        string
-	subClashPath       string
-	subClashAutoDetect bool
-	clashUserAgent     *regexp.Regexp
-	jsonAutoDetect     bool
-	jsonUserAgent      *regexp.Regexp
-	jsonAlwaysArray    bool
-	jsonEnabled        bool
-	clashEnabled       bool
-	subEncrypt         bool
-	updateInterval     string
+	subPath        string
+	subJsonPath    string
+	subClashPath   string
+	jsonEnabled    bool
+	clashEnabled   bool
+	subEncrypt     bool
+	updateInterval string
 
 	subService      *SubService
 	subJsonService  *SubJsonService
 	subClashService *SubClashService
-	clientService   service.ClientService
 	settingService  service.SettingService
 
 	subTemplateMu    sync.RWMutex
 	subTemplateCache map[string]*cachedSubTemplate
 }
 
-type subControllerConfig struct {
-	subPath      string
-	subJsonPath  string
-	subClashPath string
-
-	subClashAutoDetect     bool
-	subClashUserAgentRegex string
-	subJsonAutoDetect      bool
-	subJsonUserAgentRegex  string
-	subJsonAlwaysArray     bool
-	subJsonEnabled         bool
-	subClashEnabled        bool
-
-	subEncrypt     bool
-	remarkTemplate string
-	updateInterval string
-
-	subJsonMux            string
-	subJsonRules          string
-	subJsonRoutingRules   string
-	subJsonDns            string
-	subJsonFinalMask      string
-	subJsonObservatory    string
-	subClashEnableRouting bool
-	subClashRules         string
-
-	subTitle         string
-	subSupportURL    string
-	subProfileMode   string
-	subProfileURL    string
-	subAnnounce      string
-	subEnableRouting bool
-	subRoutingRules  string
-	subHideSettings  bool
-	happConfig       HappConfig
-
-	subIncyEnableRouting bool
-	subIncyRoutingRules  string
-}
-
-type SUBControllerOption func(*subControllerConfig)
-
-func WithSUBPath(value string) SUBControllerOption {
-	return func(config *subControllerConfig) { config.subPath = value }
-}
-
-func WithSUBJsonPath(value string) SUBControllerOption {
-	return func(config *subControllerConfig) { config.subJsonPath = value }
-}
-
-func WithSUBClashPath(value string) SUBControllerOption {
-	return func(config *subControllerConfig) { config.subClashPath = value }
-}
-
-func WithSUBClashAutoDetect(value bool) SUBControllerOption {
-	return func(config *subControllerConfig) { config.subClashAutoDetect = value }
-}
-
-func WithSUBClashUserAgentRegex(value string) SUBControllerOption {
-	return func(config *subControllerConfig) { config.subClashUserAgentRegex = value }
-}
-
-func WithSUBJsonAutoDetect(value bool) SUBControllerOption {
-	return func(config *subControllerConfig) { config.subJsonAutoDetect = value }
-}
-
-func WithSUBJsonUserAgentRegex(value string) SUBControllerOption {
-	return func(config *subControllerConfig) { config.subJsonUserAgentRegex = value }
-}
-
-func WithSUBJsonAlwaysArray(value bool) SUBControllerOption {
-	return func(config *subControllerConfig) { config.subJsonAlwaysArray = value }
-}
-
-func WithSUBJsonEnabled(value bool) SUBControllerOption {
-	return func(config *subControllerConfig) { config.subJsonEnabled = value }
-}
-
-func WithSUBClashEnabled(value bool) SUBControllerOption {
-	return func(config *subControllerConfig) { config.subClashEnabled = value }
-}
-
-func WithSUBEncryption(value bool) SUBControllerOption {
-	return func(config *subControllerConfig) { config.subEncrypt = value }
-}
-
-func WithSUBRemarkTemplate(value string) SUBControllerOption {
-	return func(config *subControllerConfig) { config.remarkTemplate = value }
-}
-
-func WithSUBUpdateInterval(value string) SUBControllerOption {
-	return func(config *subControllerConfig) { config.updateInterval = value }
-}
-
-func WithSUBJsonMux(value string) SUBControllerOption {
-	return func(config *subControllerConfig) { config.subJsonMux = value }
-}
-
-func WithSUBJsonRules(value string) SUBControllerOption {
-	return func(config *subControllerConfig) { config.subJsonRules = value }
-}
-
-func WithSUBJsonRoutingRules(value string) SUBControllerOption {
-	return func(config *subControllerConfig) { config.subJsonRoutingRules = value }
-}
-
-func WithSUBJsonDns(value string) SUBControllerOption {
-	return func(config *subControllerConfig) { config.subJsonDns = value }
-}
-
-func WithSUBJsonFinalMask(value string) SUBControllerOption {
-	return func(config *subControllerConfig) { config.subJsonFinalMask = value }
-}
-
-func WithSUBJsonObservatory(value string) SUBControllerOption {
-	return func(config *subControllerConfig) { config.subJsonObservatory = value }
-}
-
-func WithSUBClashEnableRouting(value bool) SUBControllerOption {
-	return func(config *subControllerConfig) { config.subClashEnableRouting = value }
-}
-
-func WithSUBClashRules(value string) SUBControllerOption {
-	return func(config *subControllerConfig) { config.subClashRules = value }
-}
-
-func WithSUBTitle(value string) SUBControllerOption {
-	return func(config *subControllerConfig) { config.subTitle = value }
-}
-
-func WithSUBSupportURL(value string) SUBControllerOption {
-	return func(config *subControllerConfig) { config.subSupportURL = value }
-}
-
-func WithSUBProfileURL(value string) SUBControllerOption {
-	return func(config *subControllerConfig) { config.subProfileURL = value }
-}
-
-func WithSUBProfileMode(value string) SUBControllerOption {
-	return func(config *subControllerConfig) { config.subProfileMode = value }
-}
-
-func WithSUBAnnounce(value string) SUBControllerOption {
-	return func(config *subControllerConfig) { config.subAnnounce = value }
-}
-
-func WithSUBEnableRouting(value bool) SUBControllerOption {
-	return func(config *subControllerConfig) { config.subEnableRouting = value }
-}
-
-func WithSUBRoutingRules(value string) SUBControllerOption {
-	return func(config *subControllerConfig) { config.subRoutingRules = value }
-}
-
-func WithSUBHideSettings(value bool) SUBControllerOption {
-	return func(config *subControllerConfig) { config.subHideSettings = value }
-}
-
-func WithSUBIncyEnableRouting(value bool) SUBControllerOption {
-	return func(config *subControllerConfig) { config.subIncyEnableRouting = value }
-}
-
-func WithSUBIncyRoutingRules(value string) SUBControllerOption {
-	return func(config *subControllerConfig) { config.subIncyRoutingRules = value }
-}
-
-func WithSUBHappConfig(value HappConfig) SUBControllerOption {
-	return func(config *subControllerConfig) { config.happConfig = value }
-}
-
-func defaultSUBControllerConfig() subControllerConfig {
-	return subControllerConfig{
-		subPath:        "/sub/",
-		subJsonPath:    "/json/",
-		subClashPath:   "/clash/",
-		subEncrypt:     true,
-		remarkTemplate: service.DefaultRemarkTemplate,
-		updateInterval: "12",
-		subProfileMode: service.SubProfileModeNone,
-	}
-}
-
 // NewSUBController creates a new subscription controller with the given configuration.
-func NewSUBController(g *gin.RouterGroup, options ...SUBControllerOption) *SUBController {
-	config := defaultSUBControllerConfig()
-	for _, option := range options {
-		option(&config)
-	}
-
-	sub := NewSubService(config.remarkTemplate)
-	subJsonSvc := NewSubJsonService(config.subJsonMux, config.subJsonRules, config.subJsonFinalMask, config.subJsonRoutingRules, sub)
-	subJsonSvc.SetObservatoryConfig(config.subJsonObservatory)
-	subJsonSvc.SetDnsConfig(config.subJsonDns)
+func NewSUBController(
+	g *gin.RouterGroup,
+	subPath string,
+	jsonPath string,
+	clashPath string,
+	jsonEnabled bool,
+	clashEnabled bool,
+	encrypt bool,
+	remarkTemplate string,
+	update string,
+	jsonMux string,
+	jsonRules string,
+	jsonFinalMask string,
+	clashEnableRouting bool,
+	clashRules string,
+	subTitle string,
+	subSupportUrl string,
+	subProfileUrl string,
+	subAnnounce string,
+	subEnableRouting bool,
+	subRoutingRules string,
+	subHideSettings bool,
+	subIncyEnableRouting bool,
+	subIncyRoutingRules string,
+) *SUBController {
+	sub := NewSubService(remarkTemplate)
 	a := &SUBController{
-		subTitle:            config.subTitle,
-		subSupportUrl:       config.subSupportURL,
-		subProfileMode:      config.subProfileMode,
-		subProfileUrl:       config.subProfileURL,
-		subAnnounce:         config.subAnnounce,
-		subEnableRouting:    config.subEnableRouting,
-		subRoutingRules:     config.subRoutingRules,
-		subJsonRoutingRules: config.subJsonRoutingRules,
-		subHideSettings:     config.subHideSettings,
-		happConfig:          config.happConfig,
+		subTitle:         subTitle,
+		subSupportUrl:    subSupportUrl,
+		subProfileUrl:    subProfileUrl,
+		subAnnounce:      subAnnounce,
+		subEnableRouting: subEnableRouting,
+		subRoutingRules:  subRoutingRules,
+		subHideSettings:  subHideSettings,
 
-		subIncyEnableRouting: config.subIncyEnableRouting,
-		subIncyRoutingRules:  config.subIncyRoutingRules,
+		subIncyEnableRouting: subIncyEnableRouting,
+		subIncyRoutingRules:  subIncyRoutingRules,
 
-		subPath:            config.subPath,
-		subJsonPath:        config.subJsonPath,
-		subClashPath:       config.subClashPath,
-		subClashAutoDetect: config.subClashAutoDetect,
-		clashUserAgent:     compileUserAgentRegex("Clash/Mihomo", config.subClashUserAgentRegex, service.DefaultSubClashUserAgentRegex),
-		jsonAutoDetect:     config.subJsonAutoDetect,
-		jsonUserAgent:      compileUserAgentRegex("Xray JSON", config.subJsonUserAgentRegex, service.DefaultSubJsonUserAgentRegex),
-		jsonAlwaysArray:    config.subJsonAlwaysArray,
-		jsonEnabled:        config.subJsonEnabled,
-		clashEnabled:       config.subClashEnabled,
-		subEncrypt:         config.subEncrypt,
-		updateInterval:     config.updateInterval,
+		subPath:        subPath,
+		subJsonPath:    jsonPath,
+		subClashPath:   clashPath,
+		jsonEnabled:    jsonEnabled,
+		clashEnabled:   clashEnabled,
+		subEncrypt:     encrypt,
+		updateInterval: update,
 
 		subService:      sub,
-		subJsonService:  subJsonSvc,
-		subClashService: NewSubClashService(config.subClashEnableRouting, config.subClashRules, sub),
+		subJsonService:  NewSubJsonService(jsonMux, jsonRules, jsonFinalMask, sub),
+		subClashService: NewSubClashService(clashEnableRouting, clashRules, sub),
 
 		subTemplateCache: map[string]*cachedSubTemplate{},
 	}
@@ -326,8 +177,8 @@ func (a *SUBController) initRouter(g *gin.RouterGroup) {
 	gLink := g.Group(a.subPath)
 	gLink.GET(":subid", a.subs)
 	gLink.HEAD(":subid", a.subs)
-	gLink.GET(":subid/hwid-status", a.hwidStatus)
-	gLink.HEAD(":subid/hwid-status", a.hwidStatus)
+	gLink.GET(":subid/info", a.subInfo)
+	gLink.HEAD(":subid/info", a.subInfo)
 	if a.jsonEnabled {
 		gJson := g.Group(a.subJsonPath)
 		gJson.GET(":subid", a.subJsons)
@@ -337,40 +188,7 @@ func (a *SUBController) initRouter(g *gin.RouterGroup) {
 		gClash := g.Group(a.subClashPath)
 		gClash.GET(":subid", a.subClashs)
 		gClash.HEAD(":subid", a.subClashs)
-		if sameSubscriptionPath(a.subClashPath, subMihomoPath) {
-			// The configured Clash path already provides the full Mihomo profile.
-		} else if owner := a.configuredSubscriptionPathOwner(subMihomoPath); owner != "" {
-			logger.Warningf("Mihomo subscription alias %q is unavailable because it conflicts with the configured %s path", subMihomoPath, owner)
-		} else {
-			gMihomo := g.Group(subMihomoPath)
-			gMihomo.GET(":subid", a.subClashs)
-			gMihomo.HEAD(":subid", a.subClashs)
-		}
-		if owner := a.configuredSubscriptionPathOwner(subClashLegacyPath); owner != "" {
-			logger.Warningf("Legacy Clash subscription alias %q is unavailable because it conflicts with the configured %s path", subClashLegacyPath, owner)
-		} else {
-			gLegacy := g.Group(subClashLegacyPath)
-			gLegacy.GET(":subid", a.subClashLegacy)
-			gLegacy.HEAD(":subid", a.subClashLegacy)
-		}
 	}
-}
-
-func sameSubscriptionPath(left, right string) bool {
-	return strings.Trim(left, "/") == strings.Trim(right, "/")
-}
-
-func (a *SUBController) configuredSubscriptionPathOwner(candidate string) string {
-	if sameSubscriptionPath(candidate, a.subPath) {
-		return "raw subscription"
-	}
-	if a.jsonEnabled && sameSubscriptionPath(candidate, a.subJsonPath) {
-		return "JSON subscription"
-	}
-	if a.clashEnabled && sameSubscriptionPath(candidate, a.subClashPath) {
-		return "Clash subscription"
-	}
-	return ""
 }
 
 // maybeServeSubPage renders the HTML info page when the request comes from a
@@ -385,39 +203,14 @@ func (a *SUBController) maybeServeSubPage(c *gin.Context) bool {
 	if !wantsHTML {
 		return false
 	}
-	page, ok := a.buildSubPageData(c)
-	if !ok {
-		return true
-	}
-	a.serveSubPage(c, page.BasePath, page)
-	return true
-}
-
-func (a *SUBController) maybeServeSubInfo(c *gin.Context) bool {
-	if !strings.EqualFold(c.Query("format"), "info") {
-		return false
-	}
-	page, ok := a.buildSubPageData(c)
-	if !ok {
-		return true
-	}
-	info := a.subPageContext(page)
-	delete(info, "links")
-	info["emails"] = dedupeEmails(page.Emails)
-	setNoCacheHeaders(c)
-	c.JSON(http.StatusOK, info)
-	return true
-}
-
-func (a *SUBController) buildSubPageData(c *gin.Context) (PageData, bool) {
 	subId := c.Param("subid")
 	_, host, _, hostHeader := a.subService.ResolveRequest(c)
 	subReq := a.subService.ForRequest(host)
 	subReq.subscriptionBody = false
 	subs, emails, lastOnline, traffic, err := subReq.getSubs(subId)
-	if err != nil || subs == nil {
+	if err != nil || len(subs) == 0 {
 		writeSubError(c, err)
-		return PageData{}, false
+		return true
 	}
 	subURL, subJsonURL, subClashURL := subReq.BuildURLs(a.subPath, a.subJsonPath, a.subClashPath, subId)
 	if !a.jsonEnabled {
@@ -431,59 +224,22 @@ func (a *SUBController) buildSubPageData(c *gin.Context) (PageData, bool) {
 		basePath = "/"
 	}
 	basePathStr := basePath.(string)
-	metadata := a.metadataForSubRequest(func() *SubService { return subReq }, subId, "")
-	page := subReq.BuildPageData(subId, hostHeader, traffic, lastOnline, subs, emails, subURL, subJsonURL, subClashURL, basePathStr, metadata.Title, metadata.SupportURL)
-	page.SubAnnounce = metadata.Announce
-	return page, true
-}
-
-func dedupeEmails(emails []string) []string {
-	out := make([]string, 0, len(emails))
-	seen := make(map[string]struct{}, len(emails))
-	for _, email := range emails {
-		if email == "" {
-			continue
-		}
-		if _, dup := seen[email]; dup {
-			continue
-		}
-		seen[email] = struct{}{}
-		out = append(out, email)
-	}
-	return out
+	page := subReq.BuildPageData(subId, hostHeader, traffic, lastOnline, subs, emails, subURL, subJsonURL, subClashURL, basePathStr, a.subTitle, a.subSupportUrl)
+	a.serveSubPage(c, basePathStr, page)
+	return true
 }
 
 // subs handles HTTP requests for subscription links, returning either HTML page or base64-encoded subscription data.
 func (a *SUBController) subs(c *gin.Context) {
-	userAgent := c.GetHeader("User-Agent")
-	if a.maybeServeSubInfo(c) {
-		logSubscriptionRoute(userAgent, "info")
-		return
-	}
 	if a.maybeServeSubPage(c) {
-		logSubscriptionRoute(userAgent, "html")
 		return
 	}
-	if !a.enforceHwid(c) {
-		return
-	}
-	if shouldAutoServeClash(a.subClashAutoDetect, a.clashEnabled, false, userAgent, a.clashUserAgent) && a.serveClashBody(c, false, false) {
-		a.recordSubscriptionFetch(c)
-		logSubscriptionRoute(userAgent, "clash")
-		return
-	}
-	if shouldAutoServeJson(a.jsonAutoDetect, a.jsonEnabled, false, userAgent, a.jsonUserAgent) && a.serveJsonBody(c, true, "application/json; charset=utf-8", false) {
-		a.recordSubscriptionFetch(c)
-		logSubscriptionRoute(userAgent, "json")
-		return
-	}
-	logSubscriptionRoute(userAgent, "raw")
 	subId := c.Param("subid")
 	scheme, host, hostWithPort, _ := a.subService.ResolveRequest(c)
 	subReq := a.subService.ForRequest(host)
 	subReq.subscriptionBody = true
 	subs, _, _, traffic, err := subReq.getSubs(subId)
-	if err != nil || subs == nil {
+	if err != nil || len(subs) == 0 {
 		writeSubError(c, err)
 	} else {
 		var result strings.Builder
@@ -492,17 +248,33 @@ func (a *SUBController) subs(c *gin.Context) {
 			result.WriteString("\n")
 		}
 
+		if a.jsonEnabled {
+			clientImportFormat, _ := a.settingService.GetSubClientImportFormat()
+			if strings.EqualFold(strings.TrimSpace(clientImportFormat), "json") {
+				jsonSub, jsonHeader, jsonErr := a.subJsonService.GetJson(subId, host)
+				if jsonErr == nil && len(jsonSub) > 0 {
+					profileUrl := a.subProfileUrl
+					if profileUrl == "" {
+						profileUrl = fmt.Sprintf("%s://%s%s", scheme, hostWithPort, c.Request.RequestURI)
+					}
+					a.ApplyCommonHeaders(c, jsonHeader, a.updateInterval, a.subTitle, a.subSupportUrl, profileUrl, a.subAnnounce, a.subEnableRouting, a.subRoutingRules, false)
+					c.String(http.StatusOK, jsonSub)
+					return
+				}
+			}
+		}
+
 		// Add headers
-		header := subReq.subscriptionUserinfo(traffic)
-		metadata := a.metadataForSubRequest(func() *SubService { return subReq }, subId, builtinProfileURL(c, scheme, hostWithPort))
-		a.ApplyCommonHeaders(c, header, a.updateInterval, metadata.Title, metadata.SupportURL, metadata.ProfileURL, metadata.Announce, a.subEnableRouting, a.subRoutingRules, a.subHideSettings)
+		header := fmt.Sprintf("upload=%d; download=%d; total=%d; expire=%d", traffic.Up, traffic.Down, traffic.Total, traffic.ExpiryTime/1000)
+		profileUrl := a.subProfileUrl
+		if profileUrl == "" {
+			profileUrl = fmt.Sprintf("%s://%s%s", scheme, hostWithPort, c.Request.RequestURI)
+		}
+		a.ApplyCommonHeaders(c, header, a.updateInterval, a.subTitle, a.subSupportUrl, profileUrl, a.subAnnounce, a.subEnableRouting, a.subRoutingRules, a.subHideSettings)
 
 		if a.subIncyEnableRouting && a.subIncyRoutingRules != "" {
-			incyRules, _, err := resolveIncyRoutingSource(a.subIncyRoutingRules)
-			if err == nil && strings.TrimSpace(incyRules) != "" {
-				result.WriteString(incyRules)
-				result.WriteString("\n")
-			}
+			result.WriteString(a.subIncyRoutingRules)
+			result.WriteString("\n")
 		}
 
 		if a.subEncrypt {
@@ -510,69 +282,96 @@ func (a *SUBController) subs(c *gin.Context) {
 		} else {
 			c.String(200, result.String())
 		}
-		a.recordSubscriptionFetch(c)
 	}
 }
 
-func (a *SUBController) recordSubscriptionFetch(c *gin.Context) {
-	if c.Request == nil || c.Request.Method != http.MethodGet || c.Writer.Status() != http.StatusOK {
+// subInfo returns a JSON view-model for rich subscription page templates such as Ourenus.
+func (a *SUBController) subInfo(c *gin.Context) {
+	subId := c.Param("subid")
+	_, host, _, hostHeader := a.subService.ResolveRequest(c)
+	subs, emails, lastOnline, traffic, err := a.subService.GetSubs(subId, host)
+	if err != nil || len(subs) == 0 {
+		writeSubError(c, err)
 		return
 	}
-	if err := a.subService.RecordSubscriptionFetch(c.Param("subid")); err != nil {
-		logger.Warning("Failed to record subscription fetch:", err)
+
+	subURL, subJsonURL, subClashURL := a.subService.BuildURLs(a.subPath, a.subJsonPath, a.subClashPath, subId)
+	if !a.jsonEnabled {
+		subJsonURL = ""
 	}
-}
-
-func shouldAutoServeClash(autoDetect, clashEnabled, wantsHTML bool, userAgent string, userAgentRegex *regexp.Regexp) bool {
-	return shouldAutoServeFormat(autoDetect, clashEnabled, wantsHTML, userAgent, userAgentRegex)
-}
-
-func shouldAutoServeJson(autoDetect, jsonEnabled, wantsHTML bool, userAgent string, userAgentRegex *regexp.Regexp) bool {
-	return shouldAutoServeFormat(autoDetect, jsonEnabled, wantsHTML, userAgent, userAgentRegex)
-}
-
-func shouldAutoServeFormat(autoDetect, formatEnabled, wantsHTML bool, userAgent string, userAgentRegex *regexp.Regexp) bool {
-	if !autoDetect || !formatEnabled || wantsHTML || userAgentRegex == nil {
-		return false
+	if !a.clashEnabled {
+		subClashURL = ""
 	}
-	return userAgentRegex.MatchString(userAgent)
-}
 
-func logSubscriptionRoute(userAgent, branch string) {
-	logger.Debugf("Subscription request routed: branch=%s user_agent=%q", branch, sanitizeUserAgentForLog(userAgent))
-}
+	basePath, exists := c.Get("base_path")
+	if !exists {
+		basePath = "/"
+	}
+	basePathStr := basePath.(string)
+	page := a.subService.BuildPageData(subId, hostHeader, traffic, lastOnline, subs, emails, subURL, subJsonURL, subClashURL, basePathStr, a.subTitle, a.subSupportUrl)
 
-func sanitizeUserAgentForLog(userAgent string) string {
-	clean := strings.Map(func(r rune) rune {
-		if unicode.IsControl(r) {
-			return ' '
+	usedTraffic := page.DownloadByte + page.UploadByte
+	status := "disabled"
+	if page.Enabled {
+		status = "active"
+	}
+
+	infoItems, infoEmails := splitSubscriptionInfoItems(page.Result, page.Emails)
+
+	subJsonLabel := "JSON Config"
+	for _, itemEmail := range infoEmails {
+		itemEmail = strings.TrimSpace(itemEmail)
+		if itemEmail == "" {
+			continue
 		}
-		return r
-	}, userAgent)
-	runes := []rune(clean)
-	if len(runes) > 512 {
-		return string(runes[:512])
+		if subJsonLabel == "JSON Config" || len([]rune(itemEmail)) < len([]rune(subJsonLabel)) {
+			subJsonLabel = itemEmail
+		}
 	}
-	return clean
-}
 
-func compileUserAgentRegex(name, pattern, defaultPattern string) *regexp.Regexp {
-	pattern = strings.TrimSpace(pattern)
-	if pattern == "" {
-		pattern = strings.TrimSpace(defaultPattern)
+	clientSpeedLimits := a.getClientSpeedLimitsForSubID(subId)
+	clientConnectionLimit := a.getClientConnectionLimitForSubID(subId)
+
+	payload := gin.H{
+		"sId":                       page.SId,
+		"id":                        page.SId,
+		"sub_id":                    page.SId,
+		"username":                  page.SId,
+		"name":                      page.SId,
+		"status":                    status,
+		"enabled":                   page.Enabled,
+		"download":                  page.Download,
+		"upload":                    page.Upload,
+		"total":                     page.Total,
+		"used":                      page.Used,
+		"remained":                  page.Remained,
+		"expire":                    page.Expire,
+		"last_online":               page.LastOnline,
+		"lastOnline":                page.LastOnline,
+		"downloadByte":              page.DownloadByte,
+		"uploadByte":                page.UploadByte,
+		"totalByte":                 page.TotalByte,
+		"data_limit":                page.TotalByte,
+		"used_traffic":              usedTraffic,
+		"subscription_url":          page.SubUrl,
+		"subUrl":                    page.SubUrl,
+		"subJsonUrl":                page.SubJsonUrl,
+		"subJsonLabel":              subJsonLabel,
+		"speedLimits":               clientSpeedLimits,
+		"connectionLimit":           clientConnectionLimit,
+		"subClashUrl":               page.SubClashUrl,
+		"title":                     page.SubTitle,
+		"subTitle":                  page.SubTitle,
+		"support_url":               page.SubSupportUrl,
+		"subSupportUrl":             page.SubSupportUrl,
+		"links":                     infoItems,
+		"configs":                   infoItems,
+		"emails":                    infoEmails,
+		"data_limit_reset_strategy": "no_reset",
 	}
-	if pattern == "" {
-		return nil
-	}
-	compiled, err := regexp.Compile(pattern)
-	if err == nil {
-		return compiled
-	}
-	logger.Warningf("Invalid %s User-Agent regex %q; falling back to default %q: %v", name, pattern, defaultPattern, err)
-	if strings.TrimSpace(defaultPattern) == "" {
-		return nil
-	}
-	return regexp.MustCompile(defaultPattern)
+
+	setNoCacheHeaders(c)
+	c.JSON(http.StatusOK, payload)
 }
 
 // serveSubPage renders internal/web/dist/subpage.html for the current subscription
@@ -585,7 +384,7 @@ func (a *SUBController) serveSubPage(c *gin.Context, basePath string, page PageD
 	if diskBody, diskErr := os.ReadFile("internal/web/dist/subpage.html"); diskErr == nil {
 		body = diskBody
 	} else {
-		readBody, err := fs.ReadFile(distFS, "dist/subpage.html")
+		readBody, err := distFS.ReadFile("dist/subpage.html")
 		if err != nil {
 			c.String(http.StatusInternalServerError, "missing embedded subpage")
 			return
@@ -602,13 +401,51 @@ func (a *SUBController) serveSubPage(c *gin.Context, basePath string, page PageD
 		body = bytes.ReplaceAll(body, []byte(`href="/assets/`), []byte(`href="`+basePath+`assets/`))
 	}
 
-	subData := a.subPageContext(page)
+	// JSON-marshal the view-model so the SPA can read it as a plain
+	// The panel's "Calendar Type" setting decides whether the SubPage
+	// renders dates in Gregorian or Jalali — surface it here so the SPA
+	// can match the rest of the panel without a round-trip.
+	datepicker, _ := a.settingService.GetDatepicker()
+	if datepicker == "" {
+		datepicker = "gregorian"
+	}
 
-	// When an admin has configured a custom subscription theme, render it
-	// instead of the default SPA. We render into a buffer first so a template
-	// that fails mid-execution can't leave a partially-written (corrupt)
-	// response — on any error we log and fall through to the default page.
-	if themeDir, _ := a.settingService.GetSubThemeDir(); themeDir != "" {
+	subData := map[string]any{
+		"sId":           page.SId,
+		"enabled":       page.Enabled,
+		"download":      page.Download,
+		"upload":        page.Upload,
+		"total":         page.Total,
+		"used":          page.Used,
+		"remained":      page.Remained,
+		"expire":        page.Expire,
+		"lastOnline":    page.LastOnline,
+		"downloadByte":  page.DownloadByte,
+		"uploadByte":    page.UploadByte,
+		"totalByte":     page.TotalByte,
+		"subUrl":        page.SubUrl,
+		"subJsonUrl":    page.SubJsonUrl,
+		"subClashUrl":   page.SubClashUrl,
+		"subTitle":      page.SubTitle,
+		"subSupportUrl": page.SubSupportUrl,
+		"links":         page.Result,
+		"emails":        page.Emails,
+		"datepicker":    datepicker,
+		"announce":      a.subAnnounce,
+	}
+
+	const defaultHeimdallSubThemeDir = "/usr/local/x-ui/sub_templates/ourenus"
+	const sanaeiDefaultSubThemeDir = "__heimdall_sanaei_default__"
+
+	themeDir, _ := a.settingService.GetSubThemeDir()
+	themeDir = strings.TrimSpace(themeDir)
+	if themeDir == "" {
+		themeDir = defaultHeimdallSubThemeDir
+	} else if themeDir == sanaeiDefaultSubThemeDir {
+		themeDir = ""
+	}
+
+	if themeDir != "" {
 		if tmpl, err := a.loadSubTemplate(themeDir); err != nil {
 			logger.Error("sub: custom template parse failed, using default page:", err)
 		} else if tmpl == nil {
@@ -649,93 +486,6 @@ func (a *SUBController) serveSubPage(c *gin.Context, basePath string, page PageD
 
 	setNoCacheHeaders(c)
 	c.Data(http.StatusOK, "text/html; charset=utf-8", out)
-}
-
-// subPageContext builds the shared view-model map: the template context for
-// custom sub themes, the window.__SUB_PAGE_DATA__ payload the SPA reads, and
-// (without links) the ?format=info JSON body. The panel's "Calendar Type"
-// setting decides whether dates render Gregorian or Jalali — surfaced here so
-// consumers match the rest of the panel without a round-trip.
-func (a *SUBController) subPageContext(page PageData) map[string]any {
-	datepicker, _ := a.settingService.GetDatepicker()
-	if datepicker == "" {
-		datepicker = "gregorian"
-	}
-	subUpdates, _ := a.settingService.GetSubUpdates()
-	updateHours, _ := strconv.Atoi(subUpdates)
-
-	return map[string]any{
-		"sId":           page.SId,
-		"enabled":       page.Enabled,
-		"isOnline":      page.IsOnline,
-		"download":      page.Download,
-		"upload":        page.Upload,
-		"total":         page.Total,
-		"used":          page.Used,
-		"remained":      page.Remained,
-		"expire":        page.Expire,
-		"lastOnline":    page.LastOnline,
-		"downloadByte":  page.DownloadByte,
-		"uploadByte":    page.UploadByte,
-		"totalByte":     page.TotalByte,
-		"subUrl":        page.SubUrl,
-		"subJsonUrl":    page.SubJsonUrl,
-		"subClashUrl":   page.SubClashUrl,
-		"subTitle":      page.SubTitle,
-		"subSupportUrl": page.SubSupportUrl,
-		"subUpdates":    updateHours,
-		"links":         page.Result,
-		"emails":        page.Emails,
-		"datepicker":    datepicker,
-		"announce":      page.SubAnnounce,
-	}
-}
-
-func (a *SUBController) enforceHwid(c *gin.Context) bool {
-	result, err := a.clientService.EnforceHwidForSubID(c.Param("subid"), service.HwidRequest{
-		Hwid:        c.GetHeader("X-HWID"),
-		UserAgent:   c.GetHeader("User-Agent"),
-		DeviceOS:    c.GetHeader("X-Device-OS"),
-		OsVersion:   c.GetHeader("X-Ver-OS"),
-		DeviceModel: c.GetHeader("X-Device-Model"),
-	})
-	if err != nil {
-		writeSubError(c, err)
-		return false
-	}
-	applyHwidHeaders(c, result)
-	if !result.Allowed {
-		c.Status(http.StatusNotFound)
-		return false
-	}
-	return true
-}
-
-func applyHwidHeaders(c *gin.Context, result service.HwidGateResult) {
-	if result.Active {
-		c.Header("X-Hwid-Active", "true")
-	}
-	if result.NotSupported {
-		c.Header("X-Hwid-Not-Supported", "true")
-	}
-	if result.LimitReached {
-		c.Header("X-Hwid-Limit", "true")
-	}
-	if result.MaxDevicesReached {
-		c.Header("X-Hwid-Max-Devices-Reached", "true")
-	}
-}
-
-// hwidStatus serves read-only device-slot counters for a subscription. It
-// deliberately skips enforceHwid: asking about slots must not consume one.
-func (a *SUBController) hwidStatus(c *gin.Context) {
-	status, found, err := a.clientService.HwidSlotStatusForSubID(c.Param("subid"))
-	if err != nil || !found {
-		writeSubError(c, err)
-		return
-	}
-	setNoCacheHeaders(c)
-	c.JSON(http.StatusOK, status)
 }
 
 // setNoCacheHeaders marks a subscription page response as non-cacheable so VPN
@@ -789,135 +539,48 @@ func (a *SUBController) loadSubTemplate(themeDir string) (*template.Template, er
 	return tmpl, nil
 }
 
-// subJsons handles HTTP requests for JSON subscription configurations. The
-// device limit is enforced on every body route, ?view=raw included (#GHSA-7ww3).
+// subJsons handles HTTP requests for JSON subscription configurations.
 func (a *SUBController) subJsons(c *gin.Context) {
-	if strings.EqualFold(c.Query("view"), "raw") {
-		if !a.enforceHwid(c) {
-			return
-		}
-		if !a.serveJsonBody(c, a.jsonAlwaysArray, "application/json; charset=utf-8", true) {
-			writeSubError(c, nil)
-		}
-		a.recordSubscriptionFetch(c)
-		return
-	}
 	if a.maybeServeSubPage(c) {
 		return
 	}
-	if !a.enforceHwid(c) {
-		return
-	}
-	a.serveJson(c, a.jsonAlwaysArray, "text/plain; charset=utf-8")
-}
-
-func (a *SUBController) serveJson(c *gin.Context, alwaysReturnArray bool, contentType string) {
-	if !a.serveJsonBody(c, alwaysReturnArray, contentType, false) {
-		writeSubError(c, nil)
-	}
-	a.recordSubscriptionFetch(c)
-}
-
-func (a *SUBController) serveJsonBody(c *gin.Context, alwaysReturnArray bool, contentType string, rawDownload bool) bool {
 	subId := c.Param("subid")
 	scheme, host, hostWithPort, _ := a.subService.ResolveRequest(c)
-	jsonSub, header, err := a.subJsonService.GetJson(subId, host, alwaysReturnArray)
-	if err != nil {
+	jsonSub, header, err := a.subJsonService.GetJson(subId, host)
+	if err != nil || len(jsonSub) == 0 {
 		writeSubError(c, err)
-		return true
-	}
-	if len(jsonSub) == 0 && header == "" {
-		return false
-	}
-	var subReq *SubService
-	metadata := a.metadataForSubRequest(func() *SubService {
-		if subReq == nil {
-			subReq = a.subService.ForRequest(host)
+	} else {
+		profileUrl := a.subProfileUrl
+		if profileUrl == "" {
+			profileUrl = fmt.Sprintf("%s://%s%s", scheme, hostWithPort, c.Request.RequestURI)
 		}
-		return subReq
-	}, subId, builtinProfileURL(c, scheme, hostWithPort))
-	a.ApplyCommonHeaders(c, header, a.updateInterval, metadata.Title, metadata.SupportURL, metadata.ProfileURL, metadata.Announce, a.subEnableRouting, a.subRoutingRules, a.subHideSettings)
-	if rawDownload {
-		c.Writer.Header().Set("Content-Disposition", `attachment; filename="subscription.json"`)
-	}
+		a.ApplyCommonHeaders(c, header, a.updateInterval, a.subTitle, a.subSupportUrl, profileUrl, a.subAnnounce, a.subEnableRouting, a.subRoutingRules, a.subHideSettings)
 
-	c.Data(200, contentType, []byte(jsonSub))
-	return true
+		c.String(200, jsonSub)
+	}
 }
 
 func (a *SUBController) subClashs(c *gin.Context) {
-	a.subClash(c, false)
-}
-
-func (a *SUBController) subClashLegacy(c *gin.Context) {
-	a.subClash(c, true)
-}
-
-func (a *SUBController) subClash(c *gin.Context, legacy bool) {
-	if strings.EqualFold(c.Query("view"), "raw") {
-		if !a.enforceHwid(c) {
-			return
-		}
-		if !a.serveClashBody(c, true, legacy) {
-			writeSubError(c, nil)
-		}
-		a.recordSubscriptionFetch(c)
-		return
-	}
 	if a.maybeServeSubPage(c) {
 		return
 	}
-	if !a.enforceHwid(c) {
-		return
-	}
-	if !a.serveClashBody(c, false, legacy) {
-		writeSubError(c, nil)
-	}
-	a.recordSubscriptionFetch(c)
-}
-
-func (a *SUBController) serveClashBody(c *gin.Context, rawDownload bool, legacy bool) bool {
 	subId := c.Param("subid")
 	scheme, host, hostWithPort, _ := a.subService.ResolveRequest(c)
-	var clashSub, header string
-	var err error
-	if legacy {
-		clashSub, header, err = a.subClashService.GetClashLegacy(subId, host)
-	} else {
-		clashSub, header, err = a.subClashService.GetClash(subId, host)
-	}
-	if err != nil {
-		if errors.Is(err, errNoLegacyClashProxies) {
-			c.String(http.StatusUnprocessableEntity, err.Error())
-			return true
-		}
+	clashSub, header, err := a.subClashService.GetClash(subId, host)
+	if err != nil || len(clashSub) == 0 {
 		writeSubError(c, err)
-		return true
-	}
-	if len(clashSub) == 0 && header == "" {
-		return false
-	}
-	var subReq *SubService
-	metadata := a.metadataForSubRequest(func() *SubService {
-		if subReq == nil {
-			subReq = a.subService.ForRequest(host)
+	} else {
+		profileUrl := a.subProfileUrl
+		if profileUrl == "" {
+			profileUrl = fmt.Sprintf("%s://%s%s", scheme, hostWithPort, c.Request.RequestURI)
 		}
-		return subReq
-	}, subId, builtinProfileURL(c, scheme, hostWithPort))
-	a.ApplyCommonHeaders(c, header, a.updateInterval, metadata.Title, metadata.SupportURL, metadata.ProfileURL, metadata.Announce, a.subEnableRouting, a.subRoutingRules, a.subHideSettings)
-	if rawDownload {
-		c.Writer.Header().Set("Content-Disposition", `attachment; filename="subscription.yaml"`)
-	} else if metadata.Title != "" {
-		// Clash clients commonly use Content-Disposition to choose the imported profile name.
-		c.Writer.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename*=UTF-8''%s`, url.PathEscape(metadata.Title)))
+		a.ApplyCommonHeaders(c, header, a.updateInterval, a.subTitle, a.subSupportUrl, profileUrl, a.subAnnounce, a.subEnableRouting, a.subRoutingRules, a.subHideSettings)
+		if a.subTitle != "" {
+			// Clash clients commonly use Content-Disposition to choose the imported profile name.
+			c.Writer.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename*=UTF-8''%s`, url.PathEscape(a.subTitle)))
+		}
+		c.Data(200, "application/yaml; charset=utf-8", []byte(clashSub))
 	}
-	c.Data(200, "application/yaml; charset=utf-8", []byte(clashSub))
-	return true
-}
-
-func builtinProfileURL(c *gin.Context, scheme, hostWithPort string) string {
-	// Drop download/format selectors so the opt-in link always opens the HTML page.
-	return fmt.Sprintf("%s://%s%s?html=1", scheme, hostWithPort, c.Request.URL.EscapedPath())
 }
 
 // ApplyCommonHeaders sets common HTTP headers for subscription responses including user info, update interval, and profile title.
@@ -950,28 +613,243 @@ func (a *SUBController) ApplyCommonHeaders(
 		c.Writer.Header().Set("Announce", "base64:"+base64.StdEncoding.EncodeToString([]byte(profileAnnounce)))
 	}
 
-	rules, remote, routingErr := resolveRoutingSource(remoteRoutingHapp, profileRoutingRules)
-	if strings.TrimSpace(profileRoutingRules) == "" {
-		// Happ/INCY fetch the geo files the baked rules reference through this
-		// header; unlike the documents, it keeps the profile's own DNS servers.
-		rules, remote, routingErr = jsonRoutingHeaderSource(a.subJsonRoutingRules), false, nil
-	}
-	// The off values undo a previously pushed setting, so they ride the same
-	// opt-in as every other Happ header rather than reaching every Happ client.
-	happManaged := a.happConfig.AutoDetect && c.Request != nil && IsHappClient(c.GetHeader("User-Agent"))
-	if profileEnableRouting {
-		c.Writer.Header().Set("Routing-Enable", "true")
-	} else if happManaged {
-		c.Writer.Header().Set("Routing-Enable", "0")
-	}
-	if (routingErr == nil || !remote) && strings.TrimSpace(rules) != "" {
-		c.Writer.Header().Set("Routing", rules)
+	// Advanced (Happ)
+	c.Writer.Header().Set("Routing-Enable", strconv.FormatBool(profileEnableRouting))
+	if profileRoutingRules != "" {
+		c.Writer.Header().Set("Routing", profileRoutingRules)
 	}
 	if profileHideSettings {
 		c.Writer.Header().Set("Hide-Settings", "1")
-	} else if happManaged {
-		c.Writer.Header().Set("Hide-Settings", "0")
+	}
+}
+
+func (a *SUBController) getClientSpeedLimitsForSubID(subID string) gin.H {
+	result := gin.H{
+		"matched":      false,
+		"uploadMbps":   int64(0),
+		"downloadMbps": int64(0),
+		"hasLimit":     false,
 	}
 
-	ApplyHappHeaders(c, a.happConfig, happManaged)
+	subID = strings.TrimSpace(subID)
+	if subID == "" {
+		return result
+	}
+
+	db := database.GetDB()
+	if db == nil {
+		return result
+	}
+
+	type inboundSettingsRow struct {
+		Settings string `gorm:"column:settings"`
+	}
+
+	var rows []inboundSettingsRow
+	if err := db.Table("inbounds").Select("settings").Find(&rows).Error; err != nil {
+		return result
+	}
+
+	uploadKeys := []string{
+		"upMbps", "uploadMbps", "uploadLimitMbps", "uploadLimit",
+		"upLimitMbps", "upLimit", "uplinkLimitMbps", "uplinkLimit",
+		"limitUploadMbps", "limitUpload", "upload", "up",
+	}
+
+	downloadKeys := []string{
+		"downMbps", "downloadMbps", "downloadLimitMbps", "downloadLimit",
+		"downLimitMbps", "downLimit", "downlinkLimitMbps", "downlinkLimit",
+		"limitDownloadMbps", "limitDownload", "download", "down",
+	}
+
+	for _, row := range rows {
+		if strings.TrimSpace(row.Settings) == "" {
+			continue
+		}
+
+		var settings struct {
+			Clients []map[string]any `json:"clients"`
+		}
+		if err := json.Unmarshal([]byte(row.Settings), &settings); err != nil {
+			continue
+		}
+
+		for _, client := range settings.Clients {
+			if speedLimitString(client["subId"]) != subID && speedLimitString(client["subid"]) != subID {
+				continue
+			}
+
+			uploadMbps, uploadKey := speedLimitFirstNumber(client, uploadKeys...)
+			downloadMbps, downloadKey := speedLimitFirstNumber(client, downloadKeys...)
+
+			result["matched"] = true
+			result["uploadMbps"] = uploadMbps
+			result["downloadMbps"] = downloadMbps
+			result["uploadKey"] = uploadKey
+			result["downloadKey"] = downloadKey
+			result["hasLimit"] = uploadMbps > 0 || downloadMbps > 0
+			return result
+		}
+	}
+
+	return result
+}
+
+func speedLimitString(value any) string {
+	switch typed := value.(type) {
+	case string:
+		return strings.TrimSpace(typed)
+	case json.Number:
+		return strings.TrimSpace(typed.String())
+	case float64:
+		if math.Trunc(typed) == typed {
+			return strconv.FormatInt(int64(typed), 10)
+		}
+		return strconv.FormatFloat(typed, 'f', -1, 64)
+	case float32:
+		f := float64(typed)
+		if math.Trunc(f) == f {
+			return strconv.FormatInt(int64(f), 10)
+		}
+		return strconv.FormatFloat(f, 'f', -1, 64)
+	case int:
+		return strconv.Itoa(typed)
+	case int64:
+		return strconv.FormatInt(typed, 10)
+	case int32:
+		return strconv.FormatInt(int64(typed), 10)
+	default:
+		return ""
+	}
+}
+
+func speedLimitFirstNumber(client map[string]any, keys ...string) (int64, string) {
+	for _, key := range keys {
+		value, ok := client[key]
+		if !ok {
+			continue
+		}
+
+		number, valid := speedLimitNumber(value)
+		if !valid {
+			continue
+		}
+
+		return number, key
+	}
+
+	return 0, ""
+}
+
+func speedLimitNumber(value any) (int64, bool) {
+	switch typed := value.(type) {
+	case json.Number:
+		floatValue, err := typed.Float64()
+		if err != nil {
+			return 0, false
+		}
+		return speedLimitSanitize(floatValue)
+	case float64:
+		return speedLimitSanitize(typed)
+	case float32:
+		return speedLimitSanitize(float64(typed))
+	case int:
+		return speedLimitSanitize(float64(typed))
+	case int64:
+		return speedLimitSanitize(float64(typed))
+	case int32:
+		return speedLimitSanitize(float64(typed))
+	case string:
+		trimmed := strings.TrimSpace(typed)
+		if trimmed == "" {
+			return 0, false
+		}
+		floatValue, err := strconv.ParseFloat(trimmed, 64)
+		if err != nil {
+			return 0, false
+		}
+		return speedLimitSanitize(floatValue)
+	default:
+		return 0, false
+	}
+}
+
+func speedLimitSanitize(value float64) (int64, bool) {
+	if math.IsNaN(value) || math.IsInf(value, 0) || value < 0 {
+		return 0, false
+	}
+
+	if value > 100000 {
+		return 0, false
+	}
+
+	return int64(math.Round(value)), true
+}
+
+func (a *SUBController) getClientConnectionLimitForSubID(subID string) gin.H {
+	result := gin.H{
+		"matched":  false,
+		"limitIp":  int64(0),
+		"hasLimit": false,
+	}
+
+	subID = strings.TrimSpace(subID)
+	if subID == "" {
+		return result
+	}
+
+	db := database.GetDB()
+	if db == nil {
+		return result
+	}
+
+	type inboundSettingsRow struct {
+		Settings string `gorm:"column:settings"`
+	}
+
+	var rows []inboundSettingsRow
+	if err := db.Table("inbounds").Select("settings").Find(&rows).Error; err != nil {
+		return result
+	}
+
+	limitKeys := []string{
+		"limitIp",
+		"limitIP",
+		"limit_ip",
+		"ipLimit",
+		"iplimit",
+		"ip_limit",
+		"concurrentIpLimit",
+		"concurrentIPLimit",
+		"concurrent_ip_limit",
+		"concurrentLimit",
+	}
+
+	for _, row := range rows {
+		if strings.TrimSpace(row.Settings) == "" {
+			continue
+		}
+
+		var settings struct {
+			Clients []map[string]any `json:"clients"`
+		}
+		if err := json.Unmarshal([]byte(row.Settings), &settings); err != nil {
+			continue
+		}
+
+		for _, client := range settings.Clients {
+			if speedLimitString(client["subId"]) != subID && speedLimitString(client["subid"]) != subID {
+				continue
+			}
+
+			limitIp, limitKey := speedLimitFirstNumber(client, limitKeys...)
+			result["matched"] = true
+			result["limitIp"] = limitIp
+			result["limitKey"] = limitKey
+			result["hasLimit"] = limitIp > 0
+			return result
+		}
+	}
+
+	return result
 }

@@ -31,6 +31,7 @@ interface FilterDrawerProps {
   protocols: string[];
   groups: string[];
   nodes: NodeRecord[];
+  ownerOptions?: Array<{ value: string; label: string }>;
 }
 
 const BUCKET_KEYS = ['active', 'expiring', 'depleted', 'deactive', 'online'] as const;
@@ -44,6 +45,7 @@ export default function FilterDrawer({
   protocols,
   groups,
   nodes,
+  ownerOptions = [],
 }: FilterDrawerProps) {
   const { t } = useTranslation();
 
@@ -52,11 +54,10 @@ export default function FilterDrawer({
   }
 
   const inboundOptions = useMemo(
-    () =>
-      inbounds.map((ib) => ({
-        value: ib.id,
-        label: formatInboundLabel(ib.tag, ib.remark),
-      })),
+    () => inbounds.map((ib) => ({
+      value: ib.id,
+      label: formatInboundLabel(ib.tag, ib.remark),
+    })),
     [inbounds],
   );
 
@@ -65,7 +66,10 @@ export default function FilterDrawer({
     [protocols],
   );
 
-  const groupOptions = useMemo(() => groups.map((g) => ({ value: g, label: g })), [groups]);
+  const groupOptions = useMemo(
+    () => groups.map((g) => ({ value: g, label: g })),
+    [groups],
+  );
 
   // 0 is the "local panel" sentinel (inbounds without a nodeId) — see
   // ClientFilters.nodeIds (#4997).
@@ -87,7 +91,7 @@ export default function FilterDrawer({
       title={t('pages.clients.filterTitle')}
       open={open}
       onClose={() => onOpenChange(false)}
-      size={420}
+      width={420}
       destroyOnHidden
       footer={
         <div style={{ display: 'flex', justifyContent: 'space-between' }}>
@@ -102,7 +106,10 @@ export default function FilterDrawer({
     >
       <Form layout="vertical">
         <Form.Item label={<Typography.Text strong>{t('status')}</Typography.Text>}>
-          <Checkbox.Group value={filters.buckets} onChange={(v) => patch('buckets', v as string[])}>
+          <Checkbox.Group
+            value={filters.buckets}
+            onChange={(v) => patch('buckets', v as string[])}
+          >
             <Space orientation="vertical">
               {BUCKET_KEYS.map((k) => (
                 <Checkbox key={k} value={k}>
@@ -112,6 +119,21 @@ export default function FilterDrawer({
             </Space>
           </Checkbox.Group>
         </Form.Item>
+
+        {ownerOptions.length > 0 && (
+          <Form.Item label="Admin">
+            <Select
+              value={filters.owner || undefined}
+              onChange={(v) => patch('owner', (v || '') as string)}
+              options={ownerOptions}
+              placeholder="Admin"
+              allowClear
+              showSearch
+              optionFilterProp="label"
+              listHeight={220}
+            />
+          </Form.Item>
+        )}
 
         <Form.Item label={t('pages.inbounds.protocol')}>
           <Select
@@ -134,7 +156,8 @@ export default function FilterDrawer({
             placeholder={t('inbounds')}
             maxTagCount="responsive"
             allowClear
-            showSearch={{ optionFilterProp: 'label' }}
+            showSearch
+            optionFilterProp="label"
             listHeight={220}
           />
         </Form.Item>
@@ -149,7 +172,8 @@ export default function FilterDrawer({
               placeholder={t('pages.clients.filters.nodes')}
               maxTagCount="responsive"
               allowClear
-              showSearch={{ optionFilterProp: 'label' }}
+              showSearch
+              optionFilterProp="label"
               listHeight={220}
             />
           </Form.Item>
@@ -164,7 +188,8 @@ export default function FilterDrawer({
             placeholder={t('pages.clients.groupPlaceholder')}
             maxTagCount="responsive"
             allowClear
-            showSearch={{ optionFilterProp: 'label' }}
+            showSearch
+            optionFilterProp="label"
             listHeight={220}
           />
         </Form.Item>
@@ -255,17 +280,11 @@ export default function FilterDrawer({
 
 function bucketLabel(key: string, t: (k: string) => string): string {
   switch (key) {
-    case 'active':
-      return t('subscription.active');
-    case 'expiring':
-      return t('depletingSoon');
-    case 'depleted':
-      return t('depleted');
-    case 'deactive':
-      return t('disabled');
-    case 'online':
-      return t('online');
-    default:
-      return key;
+    case 'active': return t('subscription.active');
+    case 'expiring': return t('depletingSoon');
+    case 'depleted': return t('depleted');
+    case 'deactive': return t('disabled');
+    case 'online': return t('online');
+    default: return key;
   }
 }

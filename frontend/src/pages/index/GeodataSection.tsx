@@ -3,8 +3,6 @@ import { useTranslation } from 'react-i18next';
 import { Alert, Button, Form, Input, Modal, Select, Space, Spin, Typography, message } from 'antd';
 import { PlusOutlined, DeleteOutlined } from '@ant-design/icons';
 
-import { XrayConfigPayloadSchema } from '@/schemas/xray';
-import { isOutboundProtocol } from '@/schemas/primitives';
 import { HttpUtil } from '@/utils';
 
 interface GeodataAssetRow {
@@ -39,24 +37,22 @@ export default function GeodataSection({ active, onBusy, onClose }: GeodataSecti
   const [cron, setCron] = useState(DEFAULT_CRON);
   const [outbound, setOutbound] = useState<string | undefined>(undefined);
   const [rows, setRows] = useState<GeodataAssetRow[]>([]);
-  const [standardSources, setStandardSources] = useState<GeodataAssetRow[]>([]);
   const [outboundTags, setOutboundTags] = useState<string[]>([]);
-  const [template, setTemplate] = useState<Record<string, unknown> | null>(null);
+  const templateRef = useRef<Record<string, unknown> | null>(null);
   const outboundTestUrlRef = useRef('');
 
   const load = useCallback(async () => {
+    setLoading(true);
     try {
       const msg = await HttpUtil.post('/panel/api/xray/', undefined, { silent: true });
       if (!msg?.success || typeof msg.obj !== 'string') return;
-      const parsed = XrayConfigPayloadSchema.safeParse(JSON.parse(msg.obj));
-      if (!parsed.success) return;
-      const payload = parsed.data;
-      const next = payload.xraySetting as Record<string, unknown>;
-      setTemplate(next);
+      const payload = JSON.parse(msg.obj) as Record<string, unknown>;
+      const template = (payload.xraySetting || {}) as Record<string, unknown>;
+      templateRef.current = template;
       outboundTestUrlRef.current =
         typeof payload.outboundTestUrl === 'string' ? payload.outboundTestUrl : '';
 
-      const geodata = (next.geodata || {}) as Record<string, unknown>;
+      const geodata = (template.geodata || {}) as Record<string, unknown>;
       const assets = Array.isArray(geodata.assets) ? geodata.assets : [];
       setRows(
         assets
@@ -67,16 +63,15 @@ export default function GeodataSection({ active, onBusy, onClose }: GeodataSecti
       setOutbound(
         typeof geodata.outbound === 'string' && geodata.outbound ? geodata.outbound : undefined,
       );
-      setStandardSources(payload.geodataSources ?? []);
 
       // Download outbound candidates: template outbounds + subscription outbounds.
       // Skip blackhole outbounds — routing a download through one just drops it.
       const tags = new Set<string>();
-      const outbounds = Array.isArray(next.outbounds) ? next.outbounds : [];
+      const outbounds = Array.isArray(template.outbounds) ? template.outbounds : [];
       for (const o of outbounds) {
         if (!o || typeof o !== 'object') continue;
         const rec = o as Record<string, unknown>;
-        if (isOutboundProtocol(rec, 'blackhole')) continue;
+        if (rec.protocol === 'blackhole') continue;
         const tag = rec.tag;
         if (typeof tag === 'string' && tag) tags.add(tag);
       }
@@ -92,14 +87,8 @@ export default function GeodataSection({ active, onBusy, onClose }: GeodataSecti
     }
   }, []);
 
-  const [wasActive, setWasActive] = useState(false);
-  if (active !== wasActive) {
-    setWasActive(active);
-    if (active) setLoading(true);
-  }
-
   useEffect(() => {
-    if (active) void load();
+    if (active) load();
   }, [active, load]);
 
   function setRow(index: number, patch: Partial<GeodataAssetRow>) {
@@ -112,14 +101,8 @@ export default function GeodataSection({ active, onBusy, onClose }: GeodataSecti
     );
   }
 
-  function addStandardSources() {
-    setRows((prev) => {
-      const files = new Set(prev.map((row) => row.file));
-      return [...prev, ...standardSources.filter((source) => !files.has(source.file))];
-    });
-  }
-
   function save() {
+    const template = templateRef.current;
     if (!template) return;
     const assets = rows
       .map((r) => ({ url: r.url.trim(), file: r.file.trim() }))
@@ -230,10 +213,7 @@ export default function GeodataSection({ active, onBusy, onClose }: GeodataSecti
             >
               {t('pages.index.geodataAddFile')}
             </Button>
-            <Button onClick={addStandardSources} disabled={standardSources.length === 0}>
-              {t('pages.index.geodataUseStandardSources')}
-            </Button>
-            <Button type="primary" onClick={save} disabled={loading || !template}>
+            <Button type="primary" onClick={save} disabled={loading || !templateRef.current}>
               {t('pages.index.geodataSaveRestart')}
             </Button>
           </div>

@@ -33,7 +33,6 @@ func (t *Tgbot) SendAnswer(chatId int64, msg string, isAdmin bool) {
 		),
 		tu.InlineKeyboardRow(
 			tu.InlineKeyboardButton(t.I18nBot("tgbot.buttons.dbBackup")).WithCallbackData(t.encodeQuery("get_backup")),
-			tu.InlineKeyboardButton(t.I18nBot("tgbot.buttons.getBanLogs")).WithCallbackData(t.encodeQuery("get_banlogs")),
 		),
 		tu.InlineKeyboardRow(
 			tu.InlineKeyboardButton(t.I18nBot("tgbot.buttons.getInbounds")).WithCallbackData(t.encodeQuery("inbounds")),
@@ -77,51 +76,9 @@ func (t *Tgbot) SendAnswer(chatId int64, msg string, isAdmin bool) {
 	t.SendMsgToTgbot(chatId, msg, ReplyMarkup)
 }
 
-const telegramPageLimit = 2000
-
-func pageMessage(message string, limit int) []string {
-	if len(message) <= limit {
-		return []string{message}
-	}
-
-	pages := make([]string, 0)
-	for block := range strings.SplitSeq(message, "\r\n\r\n") {
-		for _, page := range splitMessageLines(block, limit) {
-			last := len(pages) - 1
-			if last >= 0 && len(pages[last])+len("\r\n\r\n")+len(page) <= limit {
-				pages[last] += "\r\n\r\n" + page
-				continue
-			}
-			pages = append(pages, page)
-		}
-	}
-	if len(pages) > 0 && strings.TrimSpace(pages[len(pages)-1]) == "" {
-		pages = pages[:len(pages)-1]
-	}
-	return pages
-}
-
-func splitMessageLines(block string, limit int) []string {
-	if len(block) <= limit {
-		return []string{block}
-	}
-
-	lines := strings.Split(block, "\r\n")
-	pages := []string{lines[0]}
-	for _, line := range lines[1:] {
-		last := len(pages) - 1
-		if len(pages[last])+len("\r\n")+len(line) > limit {
-			pages = append(pages, line)
-			continue
-		}
-		pages[last] += "\r\n" + line
-	}
-	return pages
-}
-
 // SendMsgToTgbot sends a message to the Telegram bot with optional reply markup.
 func (t *Tgbot) SendMsgToTgbot(chatId int64, msg string, replyMarkup ...telego.ReplyMarkup) {
-	if !t.IsRunning() {
+	if !isRunning {
 		return
 	}
 
@@ -130,7 +87,28 @@ func (t *Tgbot) SendMsgToTgbot(chatId int64, msg string, replyMarkup ...telego.R
 		return
 	}
 
-	allMessages := pageMessage(msg, telegramPageLimit)
+	var allMessages []string
+	limit := 2000
+
+	// paging message if it is big
+	if len(msg) > limit {
+		messages := strings.Split(msg, "\r\n\r\n")
+		lastIndex := -1
+
+		for _, message := range messages {
+			if (len(allMessages) == 0) || (len(allMessages[lastIndex])+len(message) > limit) {
+				allMessages = append(allMessages, message)
+				lastIndex++
+			} else {
+				allMessages[lastIndex] += "\r\n\r\n" + message
+			}
+		}
+		if strings.TrimSpace(allMessages[len(allMessages)-1]) == "" {
+			allMessages = allMessages[:len(allMessages)-1]
+		}
+	} else {
+		allMessages = append(allMessages, msg)
+	}
 	for n, message := range allMessages {
 		params := telego.SendMessageParams{
 			ChatID:    tu.ID(chatId),
@@ -180,13 +158,12 @@ func (t *Tgbot) SendMsgToTgbot(chatId int64, msg string, replyMarkup ...telego.R
 
 // SendMsgToTgbotAdmins sends a message to all admin Telegram chats.
 func (t *Tgbot) SendMsgToTgbotAdmins(msg string, replyMarkup ...telego.ReplyMarkup) {
-	admins := adminSnapshot()
 	if len(replyMarkup) > 0 {
-		for _, adminId := range admins {
+		for _, adminId := range adminIds {
 			t.SendMsgToTgbot(adminId, msg, replyMarkup[0])
 		}
 	} else {
-		for _, adminId := range admins {
+		for _, adminId := range adminIds {
 			t.SendMsgToTgbot(adminId, msg)
 		}
 	}
@@ -211,10 +188,6 @@ func (t *Tgbot) editMessageCallbackTgBot(chatId int64, messageID int, inlineKeyb
 		ReplyMarkup: inlineKeyboard,
 	}
 	if _, err := bot.EditMessageReplyMarkup(context.Background(), &params); err != nil {
-		if isTelegramNotModifiedError(err) {
-			logger.Debug("Telegram reply markup unchanged, skipping edit")
-			return
-		}
 		logger.Warning(err)
 	}
 }
@@ -231,23 +204,8 @@ func (t *Tgbot) editMessageTgBot(chatId int64, messageID int, text string, inlin
 		params.ReplyMarkup = inlineKeyboard[0]
 	}
 	if _, err := bot.EditMessageText(context.Background(), &params); err != nil {
-		if isTelegramNotModifiedError(err) {
-			logger.Debug("Telegram message text unchanged, skipping edit")
-			return
-		}
 		logger.Warning(err)
 	}
-}
-
-// Telegram answers a no-op edit with a 400 whose description carries this text;
-// a refresh tap that changed nothing is not an operator-visible failure.
-func isTelegramNotModifiedError(err error) bool {
-	if err == nil {
-		return false
-	}
-	errStr := err.Error()
-	return strings.Contains(errStr, "not modified") ||
-		strings.Contains(errStr, "No fields to modify")
 }
 
 // SendMsgToTgbotDeleteAfter sends a message and deletes it after a specified delay.
@@ -269,25 +227,16 @@ func (t *Tgbot) SendMsgToTgbotDeleteAfter(chatId int64, msg string, delayInSecon
 		return
 	}
 
-	// Delete the sent message after the specified number of seconds.
-	go t.deleteMessageAfterDelay(chatId, sentMsg.MessageID, delayInSeconds)
-}
-
-// deleteMessageAfterDelay waits delayInSeconds and then removes the message. It
-// deliberately does not touch the conversation state: every caller that ends a
-// wizard step already clears the state synchronously, and clearing it here — up
-// to several seconds later — would wipe a state the user set for the next step
-// in the meantime, silently dropping their following input.
-func (t *Tgbot) deleteMessageAfterDelay(chatId int64, messageID, delayInSeconds int) {
-	time.Sleep(time.Duration(delayInSeconds) * time.Second)
-	t.deleteMessageTgBot(chatId, messageID)
+	// Delete the sent message after the specified number of seconds
+	go func() {
+		time.Sleep(time.Duration(delayInSeconds) * time.Second) // Wait for the specified delay
+		t.deleteMessageTgBot(chatId, sentMsg.MessageID)         // Delete the message
+		userStateMgr.clear(chatId)
+	}()
 }
 
 // deleteMessageTgBot deletes a message from the chat.
 func (t *Tgbot) deleteMessageTgBot(chatId int64, messageID int) {
-	if bot == nil {
-		return
-	}
 	params := telego.DeleteMessageParams{
 		ChatID:    tu.ID(chatId),
 		MessageID: messageID,

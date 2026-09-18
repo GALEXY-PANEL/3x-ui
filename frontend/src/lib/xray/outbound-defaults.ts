@@ -47,13 +47,11 @@ export function createDefaultDNSOutboundSettings(): DNSOutboundSettings {
 
 export function createDefaultVmessOutboundSettings(): VmessOutboundSettings {
   return {
-    vnext: [
-      {
-        address: '',
-        port: 443,
-        users: [{ id: '', security: 'auto' }],
-      },
-    ],
+    vnext: [{
+      address: '',
+      port: 443,
+      users: [{ id: '', security: 'auto' }],
+    }],
   };
 }
 
@@ -80,14 +78,12 @@ export function createDefaultTrojanOutboundSettings(): TrojanOutboundSettings {
 // initial state instead of an empty Select.
 export function createDefaultShadowsocksOutboundSettings(): ShadowsocksOutboundSettings {
   return {
-    servers: [
-      {
-        address: '',
-        port: 443,
-        password: '',
-        method: '2022-blake3-aes-128-gcm',
-      },
-    ],
+    servers: [{
+      address: '',
+      port: 443,
+      password: '',
+      method: '2022-blake3-aes-128-gcm',
+    }],
   };
 }
 
@@ -115,13 +111,11 @@ export function createDefaultWireguardOutboundSettings(
     mtu: 1420,
     secretKey,
     address: [],
-    peers: [
-      {
-        publicKey: '',
-        allowedIPs: ['0.0.0.0/0', '::/0'],
-        endpoint: '',
-      },
-    ],
+    peers: [{
+      publicKey: '',
+      allowedIPs: ['0.0.0.0/0', '::/0'],
+      endpoint: '',
+    }],
     noKernelTun: false,
   };
 }
@@ -155,31 +149,18 @@ export type AnyOutboundSettings =
 export function createDefaultOutboundSettings(protocol: string): AnyOutboundSettings | null {
   void RandomUtil;
   switch (protocol) {
-    case 'freedom':
-      return createDefaultFreedomOutboundSettings();
-    case 'blackhole':
-      return createDefaultBlackholeOutboundSettings();
-    case 'dns':
-      return createDefaultDNSOutboundSettings();
-    case 'vmess':
-      return createDefaultVmessOutboundSettings();
-    case 'vless':
-      return createDefaultVlessOutboundSettings();
-    case 'trojan':
-      return createDefaultTrojanOutboundSettings();
-    case 'shadowsocks':
-      return createDefaultShadowsocksOutboundSettings();
-    case 'socks':
-      return createDefaultSocksOutboundSettings();
-    case 'http':
-      return createDefaultHttpOutboundSettings();
-    case 'wireguard':
-      return createDefaultWireguardOutboundSettings();
-    case 'hysteria':
-      return createDefaultHysteriaOutboundSettings();
-    case 'loopback':
-      return createDefaultLoopbackOutboundSettings();
-    default:
-      return null;
+    case 'freedom':     return createDefaultFreedomOutboundSettings();
+    case 'blackhole':   return createDefaultBlackholeOutboundSettings();
+    case 'dns':         return createDefaultDNSOutboundSettings();
+    case 'vmess':       return createDefaultVmessOutboundSettings();
+    case 'vless':       return createDefaultVlessOutboundSettings();
+    case 'trojan':      return createDefaultTrojanOutboundSettings();
+    case 'shadowsocks': return createDefaultShadowsocksOutboundSettings();
+    case 'socks':       return createDefaultSocksOutboundSettings();
+    case 'http':        return createDefaultHttpOutboundSettings();
+    case 'wireguard':   return createDefaultWireguardOutboundSettings();
+    case 'hysteria':    return createDefaultHysteriaOutboundSettings();
+    case 'loopback':    return createDefaultLoopbackOutboundSettings();
+    default:            return null;
   }
 }

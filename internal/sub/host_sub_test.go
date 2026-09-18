@@ -122,9 +122,9 @@ func TestSub_DisabledHostSkipped(t *testing.T) {
 	}
 }
 
-// #4 — when both hosts and a legacy externalProxy are set, hosts win and the
-// externalProxy entry is ignored.
-func TestSub_HostAndExternalProxy_Precedence(t *testing.T) {
+// #4 — Heimdall rule: when both Managed Hosts and explicit Subscription
+// Profiles are set, Subscription Profiles win and Hosts are ignored.
+func TestSub_SubscriptionProfilesOverrideHosts(t *testing.T) {
 	seedSubDB(t)
 	stream := `{"network":"ws","security":"tls","wsSettings":{"path":"/base","host":"base.host"},"tlsSettings":{"serverName":"base.sni"},"externalProxy":[{"forceTls":"tls","dest":"legacy.cdn.com","port":7443,"remark":"L"}]}`
 	ib := seedSubInbound(t, "s1", "p", 4434, 1, stream)
@@ -135,11 +135,11 @@ func TestSub_HostAndExternalProxy_Precedence(t *testing.T) {
 		t.Fatalf("GetSubs: %v", err)
 	}
 	joined := strings.Join(links, "\n")
-	if !strings.Contains(joined, "host.cdn.com:8443") {
-		t.Fatalf("host should win: %s", joined)
+	if strings.Contains(joined, "host.cdn.com:8443") {
+		t.Fatalf("hosts must not override explicit subscription profiles: %s", joined)
 	}
-	if strings.Contains(joined, "legacy.cdn.com") {
-		t.Fatalf("externalProxy must be ignored when hosts exist: %s", joined)
+	if !strings.Contains(joined, "legacy.cdn.com") {
+		t.Fatalf("subscription profiles should win over hosts: %s", joined)
 	}
 }
 
@@ -271,39 +271,6 @@ func TestSub_HostAllowInsecure(t *testing.T) {
 	}
 }
 
-// A host's Host header and path reach the Clash and JSON renderers even when
-// the inbound's own ws settings leave them empty (#5944).
-func TestSub_HostHeaderReachesClashAndJson(t *testing.T) {
-	seedSubDB(t)
-	ib := seedSubInbound(t, "s1", "hh", 4457, 1,
-		`{"network":"ws","security":"tls","wsSettings":{"path":"/"},"tlsSettings":{"serverName":"base.sni"}}`)
-	seedHost(t, &model.Host{
-		InboundId: ib.Id, SortOrder: 0, Remark: "HH", Address: "hh.cdn.com", Port: 8443, Security: "tls",
-		HostHeader: "cdn.example.com", Path: "/ws-path",
-	})
-
-	clash := NewSubClashService(false, "", NewSubService(""))
-	yaml, _, err := clash.GetClash("s1", "req.example.com")
-	if err != nil {
-		t.Fatalf("GetClash: %v", err)
-	}
-	if !strings.Contains(yaml, "Host: cdn.example.com") {
-		t.Fatalf("clash ws-opts should carry the host record's Host header:\n%s", yaml)
-	}
-	if !strings.Contains(yaml, "path: /ws-path") {
-		t.Fatalf("clash ws-opts should carry the host record's path:\n%s", yaml)
-	}
-
-	js := NewSubJsonService("", "", "", "", NewSubService(""))
-	out, _, err := js.GetJson("s1", "req.example.com", false)
-	if err != nil {
-		t.Fatalf("GetJson: %v", err)
-	}
-	if !strings.Contains(out, `"host": "cdn.example.com"`) && !strings.Contains(out, `"host":"cdn.example.com"`) {
-		t.Fatalf("json wsSettings should carry the host record's Host header:\n%s", out)
-	}
-}
-
 // A host's Final Mask reaches the raw share link as the fm param, merged with
 // any inbound-level mask (#5831).
 func TestSub_HostFinalMask_RawLink(t *testing.T) {
@@ -336,8 +303,8 @@ func TestSub_HostSockoptJSON(t *testing.T) {
 		InboundId: ib.Id, SortOrder: 0, Remark: "SO", Address: "so.cdn.com", Port: 8443, Security: "tls",
 		SockoptParams: `{"tcpFastOpen":true}`,
 	})
-	js := NewSubJsonService("", "", "", "", NewSubService(""))
-	out, _, err := js.GetJson("s1", "req.example.com", false)
+	js := NewSubJsonService("", "", "", NewSubService(""))
+	out, _, err := js.GetJson("s1", "req.example.com")
 	if err != nil {
 		t.Fatalf("GetJson: %v", err)
 	}
@@ -354,8 +321,8 @@ func TestSub_HostMuxJSON(t *testing.T) {
 		InboundId: ib.Id, SortOrder: 0, Remark: "MX", Address: "mx.cdn.com", Port: 8443, Security: "tls",
 		MuxParams: `{"enabled":true,"concurrency":8}`,
 	})
-	js := NewSubJsonService("", "", "", "", NewSubService(""))
-	out, _, err := js.GetJson("s1", "req.example.com", false)
+	js := NewSubJsonService("", "", "", NewSubService(""))
+	out, _, err := js.GetJson("s1", "req.example.com")
 	if err != nil {
 		t.Fatalf("GetJson: %v", err)
 	}
@@ -419,54 +386,40 @@ func TestSub_ExcludeFromSubTypes(t *testing.T) {
 	}
 }
 
-// A host that forces plain TLS over a Reality inbound must not leave the
-// Reality identity behind: pbk/sid/spx and the Reality dest sni describe a
-// handshake the endpoint no longer performs.
-func TestSub_HostTlsOverRealityDropsRealityParams(t *testing.T) {
+func TestSub_SubscriptionProfileClientStreamOverridesJSON(t *testing.T) {
 	seedSubDB(t)
-	reality := `{"network":"tcp","security":"reality","realitySettings":{"serverNames":["master-dest.example.com"],"publicKey":"MASTERPBK","shortIds":["ab12"],"fingerprint":"chrome"}}`
-	ib := seedSubInbound(t, "s1", "reality-in", 4461, 1, reality)
-	seedHost(t, &model.Host{InboundId: ib.Id, SortOrder: 1, Remark: "H", Address: "edge.example.com", Port: 443, Security: "tls"})
 
-	links, _, _, _, err := NewSubService("").GetSubs("s1", "req.example.com")
-	if err != nil {
-		t.Fatalf("GetSubs: %v", err)
-	}
-	joined := strings.Join(links, "\n")
-	if !strings.Contains(joined, "security=tls") {
-		t.Fatalf("host forces tls, link must say so: %s", joined)
-	}
-	for _, leaked := range []string{"pbk=", "sid=", "spx=", "sni=master-dest.example.com"} {
-		if strings.Contains(joined, leaked) {
-			t.Fatalf("reality parameter %q survived a tls host override: %s", leaked, joined)
-		}
-	}
-}
+	stream := `{"network":"tcp","security":"none","tcpSettings":{"header":{"type":"none"}},"externalProxy":[{"enabled":true,"forceTls":"same","dest":"profile.cdn.com","port":8443,"remark":"profile-client-overrides","sockopt":{"tcpFastOpen":true,"domainStrategy":"UseIP","acceptProxyProtocol":true,"V6Only":true,"trustedXForwardedFor":["127.0.0.1"]},"mux":{"enabled":true,"concurrency":4,"xudpConcurrency":8,"xudpProxyUDP443":"allow"},"finalmask":{"tcp":[{"type":"fragment"}]}}]}`
 
-// A host's cipher suites override the inbound's own in the JSON subscription,
-// while a host that leaves the field blank inherits them.
-func TestSub_HostCipherSuitesJSON(t *testing.T) {
-	seedSubDB(t)
-	ib := seedSubInbound(t, "s1", "cs", 4462, 1,
-		`{"network":"tcp","security":"tls","tlsSettings":{"serverName":"base.sni","cipherSuites":"TLS_CHACHA20_POLY1305_SHA256"}}`)
-	seedHost(t, &model.Host{
-		InboundId: ib.Id, SortOrder: 0, Remark: "CS", Address: "cs.cdn.com", Port: 8443, Security: "tls",
-		CipherSuites: "TLS_AES_256_GCM_SHA384:TLS_AES_128_GCM_SHA256",
-	})
-	seedHost(t, &model.Host{
-		InboundId: ib.Id, SortOrder: 1, Remark: "INHERIT", Address: "inh.cdn.com", Port: 8443, Security: "tls",
-	})
+	seedSubInbound(t, "s1", "profile-overrides", 4462, 1, stream)
 
-	out, _, err := NewSubJsonService("", "", "", "", NewSubService("")).GetJson("s1", "req.example.com", false)
+	service := NewSubJsonService("", "", "", NewSubService(""))
+	out, _, err := service.GetJson("s1", "req.example.com")
 	if err != nil {
 		t.Fatalf("GetJson: %v", err)
 	}
-	if !strings.Contains(out, `"cipherSuites": "TLS_AES_256_GCM_SHA384:TLS_AES_128_GCM_SHA256"`) &&
-		!strings.Contains(out, `"cipherSuites":"TLS_AES_256_GCM_SHA384:TLS_AES_128_GCM_SHA256"`) {
-		t.Fatalf("json tlsSettings should carry the host's cipher suites:\n%s", out)
+
+	for _, want := range []string{
+		`"sockopt"`,
+		`"tcpFastOpen": true`,
+		`"domainStrategy": "UseIP"`,
+		`"mux"`,
+		`"concurrency": 4`,
+		`"finalmask"`,
+		`"type": "fragment"`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("JSON is missing %q:\n%s", want, out)
+		}
 	}
-	if !strings.Contains(out, `"cipherSuites": "TLS_CHACHA20_POLY1305_SHA256"`) &&
-		!strings.Contains(out, `"cipherSuites":"TLS_CHACHA20_POLY1305_SHA256"`) {
-		t.Fatalf("a host with no cipher suites should inherit the inbound's:\n%s", out)
+
+	for _, forbidden := range []string{
+		`"acceptProxyProtocol"`,
+		`"V6Only"`,
+		`"trustedXForwardedFor"`,
+	} {
+		if strings.Contains(out, forbidden) {
+			t.Fatalf("listener-only Sockopt key leaked %q:\n%s", forbidden, out)
+		}
 	}
 }

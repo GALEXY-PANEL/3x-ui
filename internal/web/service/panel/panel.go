@@ -125,9 +125,9 @@ func (s *PanelService) RestartPanel(delay time.Duration) error {
 	return nil
 }
 
-// GetUpdateInfo checks GitHub for the latest 3x-ui release. When the dev channel
-// is enabled on a dev build it compares commits against the rolling dev release;
-// otherwise it compares versions against the latest stable tag.
+// GetUpdateInfo checks GitHub for the latest Heimdall release. When the dev
+// channel is enabled on a dev build it compares commits against the rolling dev
+// release; otherwise it compares versions against the latest stable tag.
 func (s *PanelService) GetUpdateInfo() (*PanelUpdateInfo, error) {
 	if devChannelActive() {
 		return getDevUpdateInfo()
@@ -140,7 +140,7 @@ func (s *PanelService) GetUpdateInfo() (*PanelUpdateInfo, error) {
 	return &PanelUpdateInfo{
 		Channel:         "stable",
 		CurrentVersion:  current,
-		LatestVersion:   latest,
+		LatestVersion:   normalizeVersionTag(latest),
 		UpdateAvailable: isNewerVersion(latest, current),
 	}, nil
 }
@@ -248,23 +248,18 @@ func (s *PanelService) startUpdate(useDev bool) (int64, error) {
 	updateScript := fmt.Sprintf("set -e; trap 'rm -f %s' EXIT; %s %s", shellQuote(scriptPath), shellQuote(bash), shellQuote(scriptPath))
 	runIDEnv := "XUI_UPDATE_RUN_ID=" + strconv.FormatInt(runID, 10)
 	statusFileEnv := "XUI_UPDATE_STATUS_FILE=" + statusFile
-	proxyEnv := updateProxyEnvVars()
 
 	if systemdRun, err := exec.LookPath("systemd-run"); err == nil {
 		unitName := fmt.Sprintf("x-ui-web-update-%d", time.Now().Unix())
-		args := []string{
+		cmd := exec.CommandContext(context.Background(), systemdRun,
 			"--unit", unitName,
-			"--setenv", "XUI_MAIN_FOLDER=" + mainFolder,
-			"--setenv", "XUI_SERVICE=" + serviceFolder,
-			"--setenv", "XUI_UPDATE_TAG=" + updateTag,
+			"--setenv", "XUI_MAIN_FOLDER="+mainFolder,
+			"--setenv", "XUI_SERVICE="+serviceFolder,
+			"--setenv", "XUI_UPDATE_TAG="+updateTag,
 			"--setenv", runIDEnv,
 			"--setenv", statusFileEnv,
-		}
-		for _, kv := range proxyEnv {
-			args = append(args, "--setenv", kv)
-		}
-		args = append(args, bash, "-lc", updateScript)
-		cmd := exec.CommandContext(context.Background(), systemdRun, args...)
+			bash, "-lc", updateScript,
+		)
 		out, err := cmd.CombinedOutput()
 		if err != nil {
 			output := strings.TrimSpace(string(out))
@@ -301,18 +296,6 @@ func (s *PanelService) startUpdate(useDev bool) (int64, error) {
 	recordUpdatePID(cmd.Process.Pid)
 	launched = true
 	return runID, nil
-}
-
-// updateProxyEnvVars forwards ambient proxy env vars to systemd-run's child,
-// which (unlike the bash fallback) inherits nothing but --setenv.
-func updateProxyEnvVars() []string {
-	var out []string
-	for _, key := range []string{"https_proxy", "HTTPS_PROXY", "all_proxy", "ALL_PROXY", "http_proxy", "HTTP_PROXY", "no_proxy", "NO_PROXY"} {
-		if v := os.Getenv(key); v != "" {
-			out = append(out, key+"="+v)
-		}
-	}
-	return out
 }
 
 // acquireUpdateSlot claims the single in-flight-update slot for runID. It
@@ -386,7 +369,7 @@ func downloadPanelUpdater() (string, error) {
 		return "", fmt.Errorf("download panel updater: unexpected HTTP %d", resp.StatusCode)
 	}
 
-	file, err := os.CreateTemp("", "3x-ui-update-*.sh")
+	file, err := os.CreateTemp("", "heimdall-update-*.sh")
 	if err != nil {
 		return "", err
 	}

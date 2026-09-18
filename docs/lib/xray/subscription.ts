@@ -1,4 +1,4 @@
-// Pure builders for 3x-ui's subscription server: the subscription URLs plus
+// Pure builders for Heimdall's subscription server: the subscription URLs plus
 // previews of the two body formats — Base64 (newline-joined share links,
 // standard base64) and JSON (Xray client config, one per client). Grounded in
 // internal/sub/{controller,build_urls_test}.go, json_service.go, default.json.
@@ -145,20 +145,13 @@ function subJsonSkeleton(): Record<string, unknown> {
     },
     inbounds: [
       {
-        listen: '127.0.0.1',
         port: 10808,
-        protocol: 'socks',
+        protocol: 'mixed',
         settings: { auth: 'noauth', udp: true, userLevel: 8 },
         sniffing: { destOverride: ['http', 'tls', 'quic', 'fakedns'], enabled: true },
         tag: 'mixed',
       },
-      {
-        listen: '127.0.0.1',
-        port: 10809,
-        protocol: 'http',
-        settings: { userLevel: 8 },
-        tag: 'http',
-      },
+      { port: 10809, protocol: 'http', settings: { userLevel: 8 }, tag: 'http' },
     ],
     log: { loglevel: 'warning' },
     policy: {
@@ -221,20 +214,12 @@ function proxyOutbound(c: SubClient): Record<string, unknown> {
       };
       break;
     case 'trojan':
-      settings = {
-        servers: [{ address: c.address, port: c.port, password: c.password ?? '', level: 8 }],
-      };
+      settings = { servers: [{ address: c.address, port: c.port, password: c.password ?? '', level: 8 }] };
       break;
     case 'ss':
       settings = {
         servers: [
-          {
-            address: c.address,
-            port: c.port,
-            password: c.password ?? '',
-            level: 8,
-            method: c.method || '',
-          },
+          { address: c.address, port: c.port, password: c.password ?? '', level: 8, method: c.method || '' },
         ],
       };
       break;
@@ -248,8 +233,6 @@ function proxyOutbound(c: SubClient): Record<string, unknown> {
   };
 }
 
-// Mirrors the one-document-per-client model only; the panel also emits
-// balancer documents (sub_balancers) that are intentionally out of scope here.
 function jsonConfig(c: SubClient): Record<string, unknown> {
   return {
     remarks: c.remark,
@@ -261,6 +244,6 @@ function jsonConfig(c: SubClient): Record<string, unknown> {
 export function buildJsonSubscription(clients: SubClient[]): string {
   if (clients.length === 0) return '';
   const configs = clients.map(jsonConfig);
-  // 3x-ui returns a single object for one client, an array for several.
+  // Heimdall returns a single object for one client, an array for several.
   return JSON.stringify(configs.length === 1 ? configs[0] : configs, null, 2);
 }

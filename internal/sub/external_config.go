@@ -4,7 +4,6 @@ import (
 	"encoding/base64"
 	"net/url"
 	"strings"
-	"time"
 
 	"github.com/goccy/go-json"
 
@@ -14,16 +13,14 @@ import (
 	"github.com/GALEXY-PANEL/3x-ui/v3/internal/util/link"
 )
 
-// externalLinkEntry is one client × external-link row resolved for a request.
-// Active applies the owning client's enabled and expiry state.
+// externalLinkEntry is one client × external-link row, resolved for a
+// subscription request. Email/Enable come from the owning client.
 type externalLinkEntry struct {
-	Kind       string
-	Value      string
-	Remark     string
-	NamePrefix string
-	Email      string
-	Enable     bool
-	Active     bool
+	Kind   string
+	Value  string
+	Remark string
+	Email  string
+	Enable bool
 }
 
 // expandedLink is a single share link contributed by an entry, with the display
@@ -33,8 +30,9 @@ type expandedLink struct {
 	Name string
 }
 
-// getClientExternalLinksBySubId returns active rows with owner state attached.
-// Consumers keep inactive owners as metadata but omit their link values.
+// getClientExternalLinksBySubId returns every external-link row attached to a
+// client that carries the given subId, in stable order. Stays inside
+// internal/sub + database + util/link — no dependency on the panel service layer.
 func (s *SubService) getClientExternalLinksBySubId(subId string) ([]externalLinkEntry, error) {
 	db := database.GetDB()
 	var recs []model.ClientRecord
@@ -52,10 +50,7 @@ func (s *SubService) getClientExternalLinksBySubId(subId string) ([]externalLink
 	}
 
 	var rows []model.ClientExternalLink
-	now := time.Now().UnixMilli()
 	if err := db.Where("client_id IN ?", clientIds).
-		Where("(enable IS NULL OR enable = ?)", true).
-		Where("(expiry_time IS NULL OR expiry_time <= 0 OR expiry_time > ?)", now).
 		Order("client_id ASC, sort_index ASC, id ASC").
 		Find(&rows).Error; err != nil {
 		return nil, err
@@ -68,85 +63,29 @@ func (s *SubService) getClientExternalLinksBySubId(subId string) ([]externalLink
 	for _, r := range rows {
 		rec := byId[r.ClientId]
 		out = append(out, externalLinkEntry{
-			Kind:       r.Kind,
-			Value:      r.Value,
-			Remark:     r.Remark,
-			NamePrefix: r.NamePrefix,
-			Email:      rec.Email,
-			Enable:     rec.Enable,
-			Active:     rec.Enable && (rec.ExpiryTime <= 0 || rec.ExpiryTime > now),
+			Kind:   r.Kind,
+			Value:  r.Value,
+			Remark: r.Remark,
+			Email:  rec.Email,
+			Enable: rec.Enable,
 		})
 	}
 	return out, nil
 }
 
-// expandEntry turns one entry into the concrete share links it contributes.
-// Names are never blank, so Clash/JSON do not fall back to the client email.
+// expandEntry turns one entry into the concrete share links it contributes. A
+// "subscription" entry is fetched (cached) and its links are kept with their own
+// names; a "link" entry yields the single link with the row's remark.
 func expandEntry(e externalLinkEntry) []expandedLink {
 	if e.Kind == model.ExternalLinkKindSubscription {
-		res := fetchSubscriptionLinks(e.Value)
-		if res.fetched {
-			recordExternalSubscriptionFetch(e.Value, res.err)
-		}
-		out := make([]expandedLink, 0, len(res.links))
-		for _, l := range res.links {
-			out = append(out, expandedLink{Link: l, Name: prefixedLinkName(linkDisplayName(l), e.NamePrefix, e.Email)})
+		links := fetchSubscriptionLinks(e.Value)
+		out := make([]expandedLink, 0, len(links))
+		for _, l := range links {
+			out = append(out, expandedLink{Link: l, Name: ""})
 		}
 		return out
 	}
-	name := strings.TrimSpace(e.Remark)
-	if name == "" {
-		name = linkDisplayName(e.Value)
-	}
-	return []expandedLink{{Link: e.Value, Name: name}}
-}
-
-// linkDisplayName extracts the human-readable name already carried by a share
-// link: vmess JSON `ps`, or the URL #fragment for every other scheme.
-func linkDisplayName(rawLink string) string {
-	rawLink = strings.TrimSpace(rawLink)
-	if rawLink == "" {
-		return ""
-	}
-	if after, ok := strings.CutPrefix(rawLink, "vmess://"); ok {
-		b64 := after
-		raw, err := base64.StdEncoding.DecodeString(padBase64Sub(b64))
-		if err != nil {
-			raw, err = base64.RawURLEncoding.DecodeString(strings.TrimRight(b64, "="))
-		}
-		if err != nil {
-			return ""
-		}
-		var j map[string]any
-		if err := json.Unmarshal(raw, &j); err != nil {
-			return ""
-		}
-		if ps, ok := j["ps"].(string); ok {
-			return strings.TrimSpace(ps)
-		}
-		return ""
-	}
-	if i := strings.IndexByte(rawLink, '#'); i >= 0 && i+1 < len(rawLink) {
-		frag := rawLink[i+1:]
-		if decoded, err := url.PathUnescape(frag); err == nil {
-			return strings.TrimSpace(decoded)
-		}
-		return strings.TrimSpace(frag)
-	}
-	return ""
-}
-
-// prefixedLinkName falls back to the client email so a prefixed row never
-// renders as the bare prefix when the link carries no name of its own.
-func prefixedLinkName(displayName, prefix, fallback string) string {
-	if strings.TrimSpace(prefix) == "" {
-		return displayName
-	}
-	name := displayName
-	if name == "" {
-		name = strings.TrimSpace(fallback)
-	}
-	return prefix + name
+	return []expandedLink{{Link: e.Value, Name: e.Remark}}
 }
 
 // applyRemarkToLink rewrites a share link's display name to remark (when set),

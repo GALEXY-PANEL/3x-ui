@@ -38,10 +38,7 @@ async function svgToPngBlob(svgEl: SVGSVGElement | null, size: number): Promise<
       URL.revokeObjectURL(url);
       canvas.toBlob((blob) => resolve(blob), 'image/png');
     };
-    img.onerror = () => {
-      URL.revokeObjectURL(url);
-      resolve(null);
-    };
+    img.onerror = () => { URL.revokeObjectURL(url); resolve(null); };
     img.src = url;
   });
 }
@@ -98,30 +95,18 @@ export default function QrPanel({
     <div className="qr-panel">
       {messageContextHolder}
       <div className="qr-panel-header">
-        <Tag color="green" className="qr-remark">
-          {remark}
-        </Tag>
+        <Tag color="green" className="qr-remark">{remark}</Tag>
         <Tooltip title={t('copy')}>
           <Button size="small" icon={<CopyOutlined />} aria-label={t('copy')} onClick={copy} />
         </Tooltip>
         {showQr && (
           <Tooltip title={t('downloadImage')}>
-            <Button
-              size="small"
-              icon={<PictureOutlined />}
-              aria-label={t('downloadImage')}
-              onClick={downloadImage}
-            />
+            <Button size="small" icon={<PictureOutlined />} aria-label={t('downloadImage')} onClick={downloadImage} />
           </Tooltip>
         )}
         {downloadName && (
           <Tooltip title={t('download')}>
-            <Button
-              size="small"
-              icon={<DownloadOutlined />}
-              aria-label={t('download')}
-              onClick={download}
-            />
+            <Button size="small" icon={<DownloadOutlined />} aria-label={t('download')} onClick={download} />
           </Tooltip>
         )}
       </div>
@@ -133,15 +118,13 @@ export default function QrPanel({
           tabIndex={0}
           aria-label={t('copy')}
           onClick={copyImage}
-          onKeyDown={(event) => activateOnKey(copyImage)(event)}
+          onKeyDown={activateOnKey(copyImage)}
         >
           <Tooltip title={t('copy')}>
             <QRCode
               className="qr-code"
               value={value}
               size={size}
-              errorLevel="L"
-              marginSize={2}
               type="svg"
               bordered={false}
               color="#000000"

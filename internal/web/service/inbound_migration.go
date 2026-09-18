@@ -19,29 +19,90 @@ import (
 func (s *InboundService) MigrationRemoveOrphanedTraffics() {
 	db := database.GetDB()
 	query := fmt.Sprintf(
-		"DELETE FROM client_traffics WHERE email NOT IN (SELECT email FROM clients) AND email NOT IN (SELECT %s %s)",
+		"DELETE FROM client_traffics WHERE email NOT IN (SELECT %s %s)",
 		database.JSONFieldText("client.value", "email"),
 		database.JSONClientsFromInbound(),
 	)
-	result := db.Exec(query)
-	if result.Error != nil {
-		logger.Warning("MigrationRemoveOrphanedTraffics failed:", result.Error)
+	db.Exec(query)
+}
+
+// MigrationRepairClientInboundTrafficMappings repairs detailed-accounting rows
+// created by older builds before Xray configuration is generated.
+//
+// The migration is idempotent:
+//   - healthy mappings are refreshed without resetting counters;
+//   - a stale row carrying the correct stat_email is rebound to the current
+//     clients.id;
+//   - duplicate pair/stat rows are merged by the shared upsert helper;
+//   - rows whose inbound no longer exists are removed.
+//
+// Each inbound is repaired in its own transaction so one malformed inbound does
+// not prevent the remaining inbounds from being healed during startup.
+func (s *InboundService) MigrationRepairClientInboundTrafficMappings() {
+	db := database.GetDB()
+
+	var inboundIDs []int
+	if err := db.
+		Model(&model.Inbound{}).
+		Order("id ASC").
+		Pluck("id", &inboundIDs).
+		Error; err != nil {
+		logger.Warning(
+			"MigrationRepairClientInboundTrafficMappings: load inbounds failed:",
+			err,
+		)
 		return
 	}
+
+	for _, inboundID := range inboundIDs {
+		err := db.Transaction(func(tx *gorm.DB) error {
+			return s.syncClientInboundTrafficMappingsForInbound(
+				tx,
+				inboundID,
+			)
+		})
+
+		if err != nil {
+			logger.Warningf(
+				"MigrationRepairClientInboundTrafficMappings: inbound %d failed: %v",
+				inboundID,
+				err,
+			)
+		}
+	}
+
+	result := db.Exec(`
+		DELETE FROM client_inbound_traffics
+		WHERE NOT EXISTS (
+			SELECT 1
+			FROM inbounds
+			WHERE inbounds.id = client_inbound_traffics.inbound_id
+		)
+	`)
+
+	if result.Error != nil {
+		logger.Warning(
+			"MigrationRepairClientInboundTrafficMappings: remove missing-inbound rows failed:",
+			result.Error,
+		)
+		return
+	}
+
 	if result.RowsAffected > 0 {
-		logger.Infof("MigrationRemoveOrphanedTraffics: removed %d orphaned client_traffics row(s)", result.RowsAffected)
+		logger.Infof(
+			"MigrationRepairClientInboundTrafficMappings: removed %d missing-inbound row(s)",
+			result.RowsAffected,
+		)
 	}
 }
 
-func (s *InboundService) MigrationRequirements() (err error) {
+func (s *InboundService) MigrationRequirements() {
 	db := database.GetDB()
 	tx := db.Begin()
+	var err error
 	defer func() {
 		if err == nil {
-			if commitErr := tx.Commit().Error; commitErr != nil {
-				err = commitErr
-				return
-			}
+			tx.Commit()
 			if !database.IsPostgres() {
 				if dbErr := db.Exec(`VACUUM "main"`).Error; dbErr != nil {
 					logger.Warningf("VACUUM failed: %v", dbErr)
@@ -78,8 +139,8 @@ func (s *InboundService) MigrationRequirements() (err error) {
 	// SQLite (no PG :: casts).
 	if database.IsPostgres() {
 		// Use DO block so it is idempotent and doesn't fail if already boolean.
-		normalizeBool := func(table, col string) error {
-			return tx.Exec(fmt.Sprintf(`
+		normalizeBool := func(table, col string) {
+			tx.Exec(fmt.Sprintf(`
 				DO $$
 				BEGIN
 					IF EXISTS (
@@ -90,13 +151,14 @@ func (s *InboundService) MigrationRequirements() (err error) {
 						ALTER TABLE %s ALTER COLUMN %s
 							TYPE boolean USING (CASE WHEN %s::text IN ('1','true','t','yes') THEN true ELSE false END);
 					END IF;
-				END $$;`, table, col, table, col, col)).Error
+				END $$;`, table, col, table, col, col))
 		}
-		for _, column := range [][2]string{{"inbounds", "enable"}, {"client_traffics", "enable"}, {"nodes", "enable"}, {"clients", "enable"}, {"api_tokens", "enabled"}, {"outbound_subscriptions", "enabled"}} {
-			if err = normalizeBool(column[0], column[1]); err != nil {
-				return
-			}
-		}
+		normalizeBool("inbounds", "enable")
+		normalizeBool("client_traffics", "enable")
+		normalizeBool("nodes", "enable")
+		normalizeBool("clients", "enable")
+		normalizeBool("api_tokens", "enabled")
+		normalizeBool("outbound_subscriptions", "enabled")
 	}
 
 	// Fix inbounds based problems
@@ -161,8 +223,7 @@ func (s *InboundService) MigrationRequirements() (err error) {
 				delete(settings, "testseed")
 			}
 
-			var modifiedSettings []byte
-			modifiedSettings, err = json.MarshalIndent(settings, "", "  ")
+			modifiedSettings, err := json.MarshalIndent(settings, "", "  ")
 			if err != nil {
 				return
 			}
@@ -171,39 +232,30 @@ func (s *InboundService) MigrationRequirements() (err error) {
 		}
 
 		// Add client traffic row for all clients which has email
-		var modelClients []model.Client
-		modelClients, err = s.GetClients(inbounds[inbound_index])
+		modelClients, err := s.GetClients(inbounds[inbound_index])
 		if err != nil {
 			return
 		}
 		for _, modelClient := range modelClients {
 			if len(modelClient.Email) > 0 {
 				var count int64
-				if err = tx.Model(xray.ClientTraffic{}).Where("email = ?", modelClient.Email).Count(&count).Error; err != nil {
-					return
-				}
+				tx.Model(xray.ClientTraffic{}).Where("email = ?", modelClient.Email).Count(&count)
 				if count == 0 {
-					if err = s.AddClientStat(tx, inbounds[inbound_index].Id, &modelClient); err != nil {
-						return
-					}
+					_ = s.AddClientStat(tx, inbounds[inbound_index].Id, &modelClient)
 				}
 			}
 		}
 
 		// Heal clients table for installs where the one-shot seeder
 		// skipped clients due to a tgId-string unmarshal error.
-		if err = s.clientService.SyncInbound(tx, inbounds[inbound_index].Id, modelClients); err != nil {
-			return
+		if syncErr := s.clientService.SyncInbound(tx, inbounds[inbound_index].Id, modelClients); syncErr != nil {
+			logger.Warning("MigrationRequirements sync clients failed:", syncErr)
 		}
 	}
-	if err = tx.Save(inbounds).Error; err != nil {
-		return
-	}
+	tx.Save(inbounds)
 
 	// Remove orphaned traffics
-	if err = tx.Where("inbound_id = 0").Delete(xray.ClientTraffic{}).Error; err != nil {
-		return
-	}
+	tx.Where("inbound_id = 0").Delete(xray.ClientTraffic{})
 
 	// Migrate old MultiDomain to External Proxy
 	var externalProxy []struct {
@@ -249,14 +301,8 @@ func (s *InboundService) MigrationRequirements() (err error) {
 			}
 		}
 		stream["externalProxy"] = reverses
-		newStream, marshalErr := json.MarshalIndent(stream, " ", "  ")
-		if marshalErr != nil {
-			err = marshalErr
-			return
-		}
-		if err = tx.Model(model.Inbound{}).Where("id = ?", ep.Id).Update("stream_settings", newStream).Error; err != nil {
-			return
-		}
+		newStream, _ := json.MarshalIndent(stream, " ", "  ")
+		tx.Model(model.Inbound{}).Where("id = ?", ep.Id).Update("stream_settings", newStream)
 	}
 
 	// Legacy tag cleanup for old auto-generated tags (e.g. "0.0.0.0:443-...").
@@ -273,13 +319,11 @@ func (s *InboundService) MigrationRequirements() (err error) {
 	if err != nil {
 		return
 	}
-	return err
 }
 
 func (s *InboundService) MigrateDB() {
-	if err := s.MigrationRequirements(); err != nil {
-		logger.Errorf("MigrationRequirements failed: %v", err)
-	}
+	s.MigrationRequirements()
+	s.MigrationRepairClientInboundTrafficMappings()
 	s.MigrationRemoveOrphanedTraffics()
 	s.MigrationRestoreVisionFlow()
 }
@@ -301,9 +345,6 @@ func (s *InboundService) MigrationRestoreVisionFlow() {
 		return
 	}
 	for _, ib := range inbounds {
-		if ib.DisableFlow {
-			continue
-		}
 		restored, changed := s.restoreVisionFlowForEligibleInbound(nil, ib.Settings, ib.StreamSettings, ib.Protocol)
 		if !changed {
 			continue

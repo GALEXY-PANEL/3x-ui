@@ -45,7 +45,6 @@ func newHostGroup(h *model.Host, groupId string) *entity.HostGroup {
 		Path:                   h.Path,
 		Alpn:                   h.Alpn,
 		Fingerprint:            h.Fingerprint,
-		CipherSuites:           h.CipherSuites,
 		OverrideSniFromAddress: h.OverrideSniFromAddress,
 		KeepSniBlank:           h.KeepSniBlank,
 		PinnedPeerCertSha256:   h.PinnedPeerCertSha256,
@@ -134,7 +133,6 @@ func buildHostRows(groupId string, req *entity.HostGroup) []*model.Host {
 				Path:                   req.Path,
 				Alpn:                   req.Alpn,
 				Fingerprint:            req.Fingerprint,
-				CipherSuites:           req.CipherSuites,
 				OverrideSniFromAddress: req.OverrideSniFromAddress,
 				KeepSniBlank:           req.KeepSniBlank,
 				PinnedPeerCertSha256:   req.PinnedPeerCertSha256,
@@ -215,11 +213,11 @@ func (s *HostService) GetHostGroup(groupId string) (*entity.HostGroup, error) {
 		return nil, err
 	}
 	if len(hosts) == 0 {
-		return nil, common.NewError("host not found")
+		return nil, common.NewError("host group not found")
 	}
 	grouped := groupHosts(hosts)
 	if len(grouped) == 0 {
-		return nil, common.NewError("host not found")
+		return nil, common.NewError("host group not found")
 	}
 	return grouped[0], nil
 }
@@ -255,7 +253,7 @@ func (s *HostService) UpdateHostGroup(groupId string, req *entity.HostGroup) ([]
 			return err
 		}
 		if count == 0 {
-			return common.NewError("host not found")
+			return common.NewError("host group not found")
 		}
 		if err := validateInboundsExist(tx, req.InboundIds); err != nil {
 			return err

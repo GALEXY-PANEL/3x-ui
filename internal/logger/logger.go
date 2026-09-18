@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"runtime"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/op/go-logging"
@@ -31,13 +30,10 @@ const (
 )
 
 var (
-	// InitLogger swaps the handle while other goroutines are logging, so it is
-	// published atomically — a plain assignment is an unsafe publication.
-	logger atomic.Pointer[logging.Logger]
-
-	// fileRotateMu guards fileRotate against a concurrent InitLogger/CloseLogger.
-	fileRotateMu sync.Mutex
-	fileRotate   *lumberjack.Logger // nil when file backend disabled
+	// Initialized to a usable default so logging never nil-derefs before InitLogger
+	// runs — the "migrate" and "setting" CLI subcommands log without calling it.
+	logger     = logging.MustGetLogger("x-ui")
+	fileRotate *lumberjack.Logger // nil when file backend disabled
 
 	// logBuffer maintains recent log entries in memory for web UI retrieval;
 	// logBufferMu guards it — written from many goroutines, read by the web UI.
@@ -48,12 +44,6 @@ var (
 		log   string
 	}
 )
-
-// A usable default so logging never nil-derefs before InitLogger runs — the
-// "migrate" and "setting" CLI subcommands log without calling it.
-func init() {
-	logger.Store(logging.MustGetLogger("x-ui"))
-}
 
 // InitLogger initializes dual logging backends: console/syslog and file.
 // Console logging uses the specified level, file logging always uses DEBUG level.
@@ -76,7 +66,7 @@ func InitLogger(level logging.Level) {
 
 	multiBackend := logging.MultiLogger(backends...)
 	newLogger.SetBackend(multiBackend)
-	logger.Store(newLogger)
+	logger = newLogger
 }
 
 // initDefaultBackend creates the console/syslog logging backend.
@@ -114,7 +104,7 @@ func initFileBackend() logging.Backend {
 	}
 
 	logPath := filepath.Join(logDir, logFileName)
-	rotate := &lumberjack.Logger{
+	fileRotate = &lumberjack.Logger{
 		Filename:   logPath,
 		MaxSize:    maxLogFileMB,
 		MaxBackups: maxLogBackups,
@@ -122,11 +112,8 @@ func initFileBackend() logging.Backend {
 		LocalTime:  true,
 		Compress:   compressRotated,
 	}
-	fileRotateMu.Lock()
-	fileRotate = rotate
-	fileRotateMu.Unlock()
 
-	backend := logging.NewLogBackend(rotate, "", 0)
+	backend := logging.NewLogBackend(fileRotate, "", 0)
 	return logging.NewBackendFormatter(backend, newFormatter(true))
 }
 
@@ -142,8 +129,6 @@ func newFormatter(withTime bool) logging.Formatter {
 // CloseLogger closes the rotating log writer and cleans up resources.
 // Should be called during application shutdown.
 func CloseLogger() {
-	fileRotateMu.Lock()
-	defer fileRotateMu.Unlock()
 	if fileRotate != nil {
 		_ = fileRotate.Close()
 		fileRotate = nil
@@ -152,61 +137,61 @@ func CloseLogger() {
 
 // Debug logs a debug message and adds it to the log buffer.
 func Debug(args ...any) {
-	logger.Load().Debug(args...)
+	logger.Debug(args...)
 	addToBuffer("DEBUG", fmt.Sprint(args...))
 }
 
 // Debugf logs a formatted debug message and adds it to the log buffer.
 func Debugf(format string, args ...any) {
-	logger.Load().Debugf(format, args...)
+	logger.Debugf(format, args...)
 	addToBuffer("DEBUG", fmt.Sprintf(format, args...))
 }
 
 // Info logs an info message and adds it to the log buffer.
 func Info(args ...any) {
-	logger.Load().Info(args...)
+	logger.Info(args...)
 	addToBuffer("INFO", fmt.Sprint(args...))
 }
 
 // Infof logs a formatted info message and adds it to the log buffer.
 func Infof(format string, args ...any) {
-	logger.Load().Infof(format, args...)
+	logger.Infof(format, args...)
 	addToBuffer("INFO", fmt.Sprintf(format, args...))
 }
 
 // Notice logs a notice message and adds it to the log buffer.
 func Notice(args ...any) {
-	logger.Load().Notice(args...)
+	logger.Notice(args...)
 	addToBuffer("NOTICE", fmt.Sprint(args...))
 }
 
 // Noticef logs a formatted notice message and adds it to the log buffer.
 func Noticef(format string, args ...any) {
-	logger.Load().Noticef(format, args...)
+	logger.Noticef(format, args...)
 	addToBuffer("NOTICE", fmt.Sprintf(format, args...))
 }
 
 // Warning logs a warning message and adds it to the log buffer.
 func Warning(args ...any) {
-	logger.Load().Warning(args...)
+	logger.Warning(args...)
 	addToBuffer("WARNING", fmt.Sprint(args...))
 }
 
 // Warningf logs a formatted warning message and adds it to the log buffer.
 func Warningf(format string, args ...any) {
-	logger.Load().Warningf(format, args...)
+	logger.Warningf(format, args...)
 	addToBuffer("WARNING", fmt.Sprintf(format, args...))
 }
 
 // Error logs an error message and adds it to the log buffer.
 func Error(args ...any) {
-	logger.Load().Error(args...)
+	logger.Error(args...)
 	addToBuffer("ERROR", fmt.Sprint(args...))
 }
 
 // Errorf logs a formatted error message and adds it to the log buffer.
 func Errorf(format string, args ...any) {
-	logger.Load().Errorf(format, args...)
+	logger.Errorf(format, args...)
 	addToBuffer("ERROR", fmt.Sprintf(format, args...))
 }
 

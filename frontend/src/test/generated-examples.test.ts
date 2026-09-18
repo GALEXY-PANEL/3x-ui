@@ -13,9 +13,7 @@ describe('generated response examples', () => {
   });
 
   it('pairs every example with a generated zod schema', () => {
-    const missing = names.filter(
-      (name) => typeof registry[`${name}Schema`]?.safeParse !== 'function',
-    );
+    const missing = names.filter((name) => typeof registry[`${name}Schema`]?.safeParse !== 'function');
     expect(missing).toEqual([]);
   });
 

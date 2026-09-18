@@ -1,7 +1,7 @@
 name: Bug report
 description: Report something that is broken or behaving unexpectedly
 title: "[Bug]: "
-labels: ["bug"]
+labels: ["bug", "needs triage"]
 
 body:
   - type: markdown
@@ -64,19 +64,16 @@ body:
     id: screenshots
     attributes:
       label: Screenshots
-      description: |
-        Drag images directly into this field. Redact any sensitive data.
-        Images cannot be searched or machine-read — always paste the exact
-        error text or log lines as text in the fields above as well.
+      description: Drag images directly into this field. Redact any sensitive data.
     validations:
       required: false
 
   - type: input
     id: xui-version
     attributes:
-      label: 3x-ui version
+      label: Heimdall version
       description: Shown at the top of the panel sidebar.
-      placeholder: 3.1.0
+      placeholder: 1.5.3
     validations:
       required: true
 
@@ -85,14 +82,14 @@ body:
     attributes:
       label: Xray-core version
       description: Visible on the `Xray Settings` page.
-      placeholder: 25.x.x
+      placeholder: 26.x.x
     validations:
       required: false
 
   - type: dropdown
     id: install-method
     attributes:
-      label: How did you install 3x-ui?
+      label: How did you install Heimdall?
       options:
         - install.sh script
         - Docker / Docker Compose
@@ -159,7 +156,7 @@ body:
       options:
         - label: I searched [existing issues](../issues?q=is%3Aissue) and this bug has not been reported.
           required: true
-        - label: I am running the latest released version of 3x-ui (or have verified the bug still exists on it).
+        - label: I am running the latest released version of Heimdall (or have verified the bug still exists on it).
           required: true
         - label: This bug report is written in English.
           required: true

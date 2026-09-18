@@ -2,35 +2,32 @@
 .idea/
 .vscode/
 .cursor/
-.specify/
-.claude/
+.claude/*
 .cache/
 .sync*
 
-# Ignore log files
+# Logs and temporary files
 *.log
-
-# Ignore temporary files
+*.tmp
 tmp/
 *.tar.gz
+__pycache__/
 
-# Ignore build and distribution directories
+# Build and distribution directories
 backup/
 bin/
 x-ui/
 dist/
+build/
+!internal/web/dist/
+internal/web/dist/*
+!internal/web/dist/.gitkeep
 release/
 node_modules/
+frontend/node_modules/
 
-# Ignore compiled binaries
+# Compiled binaries and runtime data
 main
-3x-ui
-
-# Ignore OS specific files
-.DS_Store
-Thumbs.db
-
-# Ignore Go build files
 *.exe
 x-ui.db
 x-ui.db-shm
@@ -38,8 +35,15 @@ x-ui.db-wal
 system_metrics.gob
 *.dump
 
-# Ignore Docker specific files
-docker-compose.override.yml
+# OS-specific files
+.DS_Store
+Thumbs.db
 
-# Ignore .env (Environment Variables) file
+# Docker and environment overrides
+docker-compose.override.yml
 .env
+
+# Local third-party Windows installers must never be committed.
+/packaging/windows/vendor/
+!packaging/release/
+!packaging/release/build-linux-amd64.sh

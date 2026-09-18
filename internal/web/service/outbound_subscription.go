@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -18,27 +17,20 @@ import (
 	"github.com/GALEXY-PANEL/3x-ui/v3/internal/logger"
 	"github.com/GALEXY-PANEL/3x-ui/v3/internal/util/common"
 	"github.com/GALEXY-PANEL/3x-ui/v3/internal/util/link"
-	"github.com/GALEXY-PANEL/3x-ui/v3/internal/util/netsafe"
 	"github.com/GALEXY-PANEL/3x-ui/v3/internal/xray"
 )
 
-// filterOutboundsRejectedByCore drops outbounds the vendored xray-core config
-// loader refuses to build — since v26.7.11 that includes unencrypted
-// vless/trojan outbounds to public addresses — because one such outbound in
-// the merged config would keep the whole core from starting. When the running
-// core predates that rejection, unencrypted outbounds are kept, mirroring
-// CheckXrayConfig's version gate.
+// filterOutboundsRejectedByCore drops outbounds that remain invalid after the
+// panel's compatibility-aware validation. Public plaintext VLESS is retained
+// because Heimdall's deployed custom core supports it; malformed or otherwise
+// unsupported outbounds are still excluded before config merge.
 func filterOutboundsRejectedByCore(label string, outbounds []any) ([]any, []string) {
-	coreVersion := "Unknown"
-	if process := currentXrayProcess(); process != nil {
-		coreVersion = process.GetXrayVersion()
-	}
 	kept := make([]any, 0, len(outbounds))
 	var dropped []string
 	for _, ob := range outbounds {
 		raw, err := json.Marshal(ob)
 		if err == nil {
-			if buildErr := xray.ValidateOutboundConfig(raw); buildErr != nil && !shouldSkipLegacyUnencryptedOutboundRejection(coreVersion, buildErr) {
+			if buildErr := xray.ValidateOutboundConfig(raw); buildErr != nil {
 				tag := ""
 				if m, ok := ob.(map[string]any); ok {
 					tag, _ = m["tag"].(string)
@@ -57,8 +49,6 @@ func filterOutboundsRejectedByCore(label string, outbounds []any) ([]any, []stri
 // It is larger than the 2 MiB user-facing subscription cap because an outbound
 // subscription may aggregate many upstream outbounds into one document.
 const maxOutboundSubscriptionBytes int64 = 8 << 20
-
-const defaultOutboundSubscriptionUserAgent = "3x-ui-outbound-sub/1.0"
 
 var errOutboundSubscriptionBodyTooLarge = errors.New("outbound subscription response body exceeds size limit")
 
@@ -158,15 +148,13 @@ func defaultPrefixNumber(subs []*model.OutboundSubscription, excludeId int) int 
 // nextDefaultSubPrefix builds the default "subN-" prefix for a new/edited
 // subscription, picking the smallest free N (excludeId skips a subscription's
 // own current prefix when editing).
-func (s *OutboundSubscriptionService) nextDefaultSubPrefix(excludeId int) (string, error) {
+func (s *OutboundSubscriptionService) nextDefaultSubPrefix(excludeId int) string {
 	var subs []*model.OutboundSubscription
-	if err := database.GetDB().Find(&subs).Error; err != nil {
-		return "", err
-	}
-	return fmt.Sprintf("sub%d-", defaultPrefixNumber(subs, excludeId)), nil
+	_ = database.GetDB().Find(&subs).Error
+	return fmt.Sprintf("sub%d-", defaultPrefixNumber(subs, excludeId))
 }
 
-func (s *OutboundSubscriptionService) Create(remark, rawURL, tagPrefix, userAgent string, enabled bool, updateInterval int, allowPrivate, prepend, allowInsecure bool) (*model.OutboundSubscription, error) {
+func (s *OutboundSubscriptionService) Create(remark, rawURL, tagPrefix string, enabled bool, updateInterval int, allowPrivate, prepend bool) (*model.OutboundSubscription, error) {
 	cleanURL, err := SanitizePublicHTTPURL(rawURL, allowPrivate)
 	if err != nil {
 		return nil, common.NewError("invalid subscription URL:", err)
@@ -179,23 +167,16 @@ func (s *OutboundSubscriptionService) Create(remark, rawURL, tagPrefix, userAgen
 	}
 	prefix := strings.TrimSpace(tagPrefix)
 	if prefix == "" {
-		prefix, err = s.nextDefaultSubPrefix(0)
-		if err != nil {
-			return nil, err
-		}
+		prefix = s.nextDefaultSubPrefix(0)
 	}
 	// New subscriptions go to the end of the priority order.
 	var count int64
-	if err := database.GetDB().Model(&model.OutboundSubscription{}).Count(&count).Error; err != nil {
-		return nil, err
-	}
+	database.GetDB().Model(&model.OutboundSubscription{}).Count(&count)
 	sub := &model.OutboundSubscription{
 		Remark:         strings.TrimSpace(remark),
 		Url:            cleanURL,
 		Enabled:        enabled,
 		AllowPrivate:   allowPrivate,
-		AllowInsecure:  allowInsecure,
-		UserAgent:      strings.TrimSpace(userAgent),
 		Prepend:        prepend,
 		Priority:       int(count),
 		TagPrefix:      prefix,
@@ -208,7 +189,7 @@ func (s *OutboundSubscriptionService) Create(remark, rawURL, tagPrefix, userAgen
 }
 
 // Update updates editable fields.
-func (s *OutboundSubscriptionService) Update(id int, remark, rawURL, tagPrefix, userAgent string, enabled bool, updateInterval int, allowPrivate, prepend, allowInsecure bool) error {
+func (s *OutboundSubscriptionService) Update(id int, remark, rawURL, tagPrefix string, enabled bool, updateInterval int, allowPrivate, prepend bool) error {
 	sub, err := s.Get(id)
 	if err != nil {
 		return err
@@ -225,17 +206,12 @@ func (s *OutboundSubscriptionService) Update(id int, remark, rawURL, tagPrefix, 
 	}
 	prefix := strings.TrimSpace(tagPrefix)
 	if prefix == "" {
-		prefix, err = s.nextDefaultSubPrefix(sub.Id)
-		if err != nil {
-			return err
-		}
+		prefix = s.nextDefaultSubPrefix(sub.Id)
 	}
 	sub.Remark = strings.TrimSpace(remark)
 	sub.Url = cleanURL
 	sub.Enabled = enabled
 	sub.AllowPrivate = allowPrivate
-	sub.AllowInsecure = allowInsecure
-	sub.UserAgent = strings.TrimSpace(userAgent)
 	sub.Prepend = prepend
 	sub.TagPrefix = prefix
 	sub.UpdateInterval = updateInterval
@@ -300,36 +276,6 @@ func (s *OutboundSubscriptionService) RefreshAllEnabled() (int, error) {
 	return refreshed, nil
 }
 
-// subscriptionFetchClient builds the HTTP client used to fetch a subscription.
-// A configured panel egress proxy dials the loopback SOCKS bridge (xray handles
-// the real egress), so its localhost dial must not be SSRF-blocked. A direct
-// fetch dials the target itself and re-resolves the hostname at dial time, so it
-// goes through the SSRF-guarded dialer, which resolves, checks and dials the same
-// IP atomically — closing the DNS-rebinding gap left by validating the hostname
-// separately from the dial.
-func (s *OutboundSubscriptionService) subscriptionFetchClient(timeout time.Duration, allowInsecure bool) *http.Client {
-	var client *http.Client
-	if s.settingService.PanelEgressProxyURL() != "" {
-		client = s.settingService.NewProxiedHTTPClient(timeout)
-	} else {
-		client = &http.Client{
-			Timeout:   timeout,
-			Transport: &http.Transport{DialContext: netsafe.SSRFGuardedDialContext},
-		}
-	}
-	if allowInsecure {
-		if tr, ok := client.Transport.(*http.Transport); ok && tr != nil {
-			cloned := tr.Clone()
-			if cloned.TLSClientConfig == nil {
-				cloned.TLSClientConfig = &tls.Config{}
-			}
-			cloned.TLSClientConfig.InsecureSkipVerify = true
-			client.Transport = cloned
-		}
-	}
-	return client
-}
-
 // fetchAndStore does the actual network + parse + stability + persist work.
 func (s *OutboundSubscriptionService) fetchAndStore(sub *model.OutboundSubscription) ([]any, error) {
 	// Re-sanitize on every fetch (handles legacy rows + defense in depth against
@@ -345,7 +291,7 @@ func (s *OutboundSubscriptionService) fetchAndStore(sub *model.OutboundSubscript
 	}
 	sub.Url = cleanURL // persist the cleaned version
 
-	client := s.subscriptionFetchClient(30*time.Second, sub.AllowInsecure)
+	client := s.settingService.NewProxiedHTTPClient(30 * time.Second)
 	// Re-validate every redirect hop: the initial host is checked above, but a
 	// redirect could still point at a private/internal address (SSRF). Cap the
 	// redirect chain as well.
@@ -361,17 +307,12 @@ func (s *OutboundSubscriptionService) fetchAndStore(sub *model.OutboundSubscript
 		return rejectPrivateHost(ctx, req.URL.Hostname())
 	}
 
-	reqCtx := netsafe.ContextWithAllowPrivate(context.Background(), sub.AllowPrivate)
-	req, err := http.NewRequestWithContext(reqCtx, http.MethodGet, sub.Url, nil)
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, sub.Url, nil)
 	if err != nil {
 		s.recordError(sub, err)
 		return nil, err
 	}
-	userAgent := strings.TrimSpace(sub.UserAgent)
-	if userAgent == "" {
-		userAgent = defaultOutboundSubscriptionUserAgent
-	}
-	req.Header.Set("User-Agent", userAgent)
+	req.Header.Set("User-Agent", "3x-ui-outbound-sub/1.0")
 
 	resp, err := client.Do(req)
 	if err != nil {
@@ -419,36 +360,24 @@ func (s *OutboundSubscriptionService) fetchAndStore(sub *model.OutboundSubscript
 		}
 	}
 
-	// Drop core-rejected links before tagging: prevTagByIndex indexes the persisted
-	// (filtered) list, so positions must be counted in that same list.
-	var droppedByCore []string
-	keptLinks, keptIdentities := parsed[:0], identities[:0]
-	for i, ob := range parsed {
-		if _, dropped := filterOutboundsRejectedByCore(fmt.Sprintf("outbound sub %d", sub.Id), []any{map[string]any(ob)}); len(dropped) > 0 {
-			droppedByCore = append(droppedByCore, dropped...)
-			continue
-		}
-		keptLinks = append(keptLinks, ob)
-		keptIdentities = append(keptIdentities, identities[i])
-	}
-
 	// Assign tags with stability (identity reuse, positional fallback, then a
 	// fresh allocation), keeping tags unique within this batch. Extracted into a
 	// pure function so it can be unit-tested without network/DB. Tags are written
 	// back into the parsed outbounds in place.
-	assigned := assignStableTags(keptLinks, keptIdentities, prev, prevTagByIndex, sub.Id, sub.TagPrefix)
+	assigned := assignStableTags(parsed, identities, prev, prevTagByIndex, sub.Id, sub.TagPrefix)
 
 	// Persist identities for next time
 	newIdent := map[string]string{}
-	for i, id := range keptIdentities {
+	for i, id := range identities {
 		newIdent[id] = assigned[i]
 	}
 	identJSON, _ := json.Marshal(newIdent)
 
-	kept := make([]any, len(keptLinks))
-	for i := range keptLinks {
-		kept[i] = map[string]any(keptLinks[i])
+	asAny := make([]any, len(parsed))
+	for i := range parsed {
+		asAny[i] = map[string]any(parsed[i])
 	}
+	kept, droppedByCore := filterOutboundsRejectedByCore(fmt.Sprintf("outbound sub %d", sub.Id), asAny)
 
 	// Persist the outbounds (as compact JSON array)
 	obsJSON, _ := json.Marshal(kept)
@@ -482,13 +411,6 @@ func (s *OutboundSubscriptionService) recordError(sub *model.OutboundSubscriptio
 // written back into parsed[i]["tag"]. The returned slice holds the assigned tags
 // in order. When tagPrefix is empty a "sub<subID>-" prefix is used for fresh tags.
 func assignStableTags(parsed []link.Outbound, identities []string, prev map[string]string, prevTagByIndex map[int]string, subID int, tagPrefix string) []string {
-	reservedStableTags := map[string]bool{}
-	for i := range parsed {
-		if i < len(identities) && prev[identities[i]] != "" {
-			reservedStableTags[prev[identities[i]]] = true
-		}
-	}
-
 	used := map[string]bool{} // uniqueness within this refresh batch
 	assigned := make([]string, len(parsed))
 	for i := range parsed {
@@ -497,14 +419,12 @@ func assignStableTags(parsed []link.Outbound, identities []string, prev map[stri
 			id = identities[i]
 		}
 		candidate := ""
-		identityTag := ""
 		if old, ok := prev[id]; ok && old != "" {
 			candidate = old
-			identityTag = old
 		}
 		if candidate == "" {
 			// try to reuse by rough positional match from previous fetch (best effort)
-			if old, ok := prevTagByIndex[i]; ok && old != "" && !reservedStableTags[old] {
+			if old, ok := prevTagByIndex[i]; ok && old != "" {
 				candidate = old
 			}
 		}
@@ -522,7 +442,7 @@ func assignStableTags(parsed []link.Outbound, identities []string, prev map[stri
 		}
 		// ensure local uniqueness inside this batch
 		final := candidate
-		for k := 1; used[final] || (reservedStableTags[final] && final != identityTag); k++ {
+		for k := 1; used[final]; k++ {
 			final = fmt.Sprintf("%s-%d", candidate, k)
 		}
 		used[final] = true

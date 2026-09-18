@@ -37,6 +37,7 @@ import (
 // so they do not need manual updates.
 func migrationModels() []any {
 	return []any{
+		&model.AdminRole{},
 		&model.User{},
 		&model.Setting{},
 		&model.HistoryOfSeeders{},
@@ -47,17 +48,20 @@ func migrationModels() []any {
 		&model.OutboundTraffics{},
 		&model.InboundClientIps{},
 		&model.ClientRecord{},
+		&model.ClientActivitySetting{},
+		&model.ClientActivityDestination{},
+		&model.ClientActivityRemoteDestination{},
 		&model.ClientInbound{},
-		&model.ClientHwid{},
+		&model.ClientInboundTraffic{},
 		&model.ClientExternalLink{},
 		&model.ClientGroup{},
 		&model.InboundFallback{},
 		&model.Host{},
 		&model.NodeClientTraffic{},
 		&model.NodeClientIp{},
+		&model.ClientIPLeaseHolder{},
 		&model.ClientGlobalTraffic{},
 		&model.OutboundSubscription{},
-		&model.SubBalancer{},
 	}
 }
 
@@ -335,7 +339,7 @@ func PrepareSQLiteForMigration(dbPath string) error {
 
 	for _, table := range []string{"users", "settings", "inbounds"} {
 		if !sqliteTableExists(sqlDB, table) {
-			return fmt.Errorf("not a 3x-ui panel database: required table %q is missing", table)
+			return fmt.Errorf("not a Heimdall panel database: required table %q is missing", table)
 		}
 	}
 	for _, m := range migrationModels() {

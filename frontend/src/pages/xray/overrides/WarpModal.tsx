@@ -1,6 +1,16 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Alert, Button, Collapse, Divider, Form, Input, message, Modal, Tag } from 'antd';
+import {
+  Alert,
+  Button,
+  Collapse,
+  Divider,
+  Form,
+  Input,
+  message,
+  Modal,
+  Tag,
+} from 'antd';
 import { ApiOutlined, SyncOutlined, DeleteOutlined, PlusOutlined } from '@ant-design/icons';
 import { FormProvider, useForm, useWatch } from 'react-hook-form';
 
@@ -63,42 +73,6 @@ function reservedFor(clientId?: string): number[] {
   const out: number[] = [];
   for (let i = 0; i < decoded.length; i += 1) out.push(decoded.charCodeAt(i));
   return out;
-}
-
-export function mergeWarpRotation(
-  existing: Record<string, unknown> | undefined,
-  data: WarpData | null,
-  config: WarpConfig | null,
-): Record<string, unknown> | null {
-  const cfg = config?.config;
-  const peer = cfg?.peers?.[0];
-  if (!cfg || !peer) return null;
-  const base: Record<string, unknown> =
-    existing && typeof existing === 'object'
-      ? { ...existing }
-      : { tag: 'warp', protocol: 'wireguard' };
-  const prevSettings =
-    base.settings && typeof base.settings === 'object'
-      ? { ...(base.settings as Record<string, unknown>) }
-      : {};
-  const prevPeers = Array.isArray(prevSettings.peers)
-    ? [...(prevSettings.peers as Record<string, unknown>[])]
-    : [];
-  const prevFirstPeer =
-    prevPeers[0] && typeof prevPeers[0] === 'object'
-      ? { ...(prevPeers[0] as Record<string, unknown>) }
-      : {};
-  prevFirstPeer.publicKey = peer.public_key;
-  prevFirstPeer.endpoint = peer.endpoint?.host;
-  prevPeers[0] = prevFirstPeer;
-  prevSettings.secretKey = data?.private_key;
-  prevSettings.address = addressesFor(cfg.interface?.addresses || {});
-  prevSettings.reserved = reservedFor(cfg.client_id ?? data?.client_id);
-  prevSettings.peers = prevPeers;
-  base.settings = prevSettings;
-  base.tag = 'warp';
-  base.protocol = 'wireguard';
-  return base;
 }
 
 export default function WarpModal({
@@ -174,26 +148,12 @@ export default function WarpModal({
     }
   }, [methods]);
 
-  const [wasOpen, setWasOpen] = useState(false);
-  if (open !== wasOpen) {
-    setWasOpen(open);
-    if (open) {
-      setWarpConfig(null);
-      setStagedOutbound(null);
-      setLicenseError('');
-    }
-  }
-
   useEffect(() => {
     if (!open) return;
-    let cancelled = false;
-    void (async () => {
-      await fetchData();
-      if (cancelled) return;
-    })();
-    return () => {
-      cancelled = true;
-    };
+    setWarpConfig(null);
+    setStagedOutbound(null);
+    setLicenseError('');
+    fetchData();
   }, [open, fetchData]);
 
   async function register() {
@@ -234,18 +194,12 @@ export default function WarpModal({
         const parsed = JSON.parse(msg.obj);
         setWarpData(parsed.data);
         setWarpConfig(parsed.config);
-        collectConfig(parsed.data, parsed.config);
-        if (warpOutboundIndex >= 0) {
-          const existing = templateSettings?.outbounds?.[warpOutboundIndex] as
-            | Record<string, unknown>
-            | undefined;
-          const merged = mergeWarpRotation(existing, parsed.data, parsed.config);
-          if (merged) {
-            onResetOutbound({ index: warpOutboundIndex, outbound: merged });
-          }
-        }
-        if (parsed.warning) {
-          messageApi.warning(parsed.warning);
+        const built = collectConfig(parsed.data, parsed.config);
+        // The backend already persisted the new keys into the saved Xray
+        // template; keep the in-memory editor in sync so a later template
+        // save doesn't revert them to the old keys.
+        if (built && warpOutboundIndex >= 0) {
+          onResetOutbound({ index: warpOutboundIndex, outbound: built });
         }
         messageApi.success(t('pages.xray.warp.changeIpSuccess', 'WARP IP changed successfully!'));
       }
@@ -257,9 +211,7 @@ export default function WarpModal({
   async function saveInterval() {
     setLoading(true);
     try {
-      const msg = await HttpUtil.post('/panel/api/xray/warp/interval', {
-        interval: methods.getValues('updateInterval'),
-      });
+      const msg = await HttpUtil.post('/panel/api/xray/warp/interval', { interval: methods.getValues('updateInterval') });
       if (msg?.success) {
         messageApi.success(t('pages.setting.toasts.saveSuccess', 'Settings saved successfully'));
       }
@@ -274,9 +226,7 @@ export default function WarpModal({
     setLoading(true);
     setLicenseError('');
     try {
-      const msg = await HttpUtil.post<string>('/panel/api/xray/warp/license', {
-        license: licenseValue,
-      });
+      const msg = await HttpUtil.post<string>('/panel/api/xray/warp/license', { license: licenseValue });
       if (msg?.success && msg.obj) {
         setWarpData(JSON.parse(msg.obj));
         setWarpConfig(null);
@@ -327,218 +277,167 @@ export default function WarpModal({
       {messageContextHolder}
       <Modal open={open} title="Cloudflare WARP" footer={null} onCancel={onClose}>
         <FormProvider {...methods}>
-          {!hasWarp ? (
-            <Button type="primary" loading={loading} icon={<ApiOutlined />} onClick={register}>
-              {t('pages.xray.warp.createAccount')}
+        {!hasWarp ? (
+          <Button type="primary" loading={loading} icon={<ApiOutlined />} onClick={register}>
+            {t('pages.xray.warp.createAccount')}
+          </Button>
+        ) : (
+          <>
+            <table className="warp-data-table">
+              <tbody>
+                <tr className="row-odd">
+                  <td>{t('pages.xray.warp.accessToken')}</td>
+                  <td>{warpData?.access_token}</td>
+                </tr>
+                <tr>
+                  <td>{t('pages.xray.warp.deviceId')}</td>
+                  <td>{warpData?.device_id}</td>
+                </tr>
+                <tr className="row-odd">
+                  <td>{t('pages.xray.warp.licenseKey')}</td>
+                  <td>{warpData?.license_key}</td>
+                </tr>
+                <tr>
+                  <td>{t('pages.xray.warp.privateKey')}</td>
+                  <td>{warpData?.private_key}</td>
+                </tr>
+              </tbody>
+            </table>
+
+            <Button loading={loading} type="primary" danger className="mt-8" icon={<DeleteOutlined />} onClick={delConfig}>
+              {t('pages.xray.warp.deleteAccount')}
             </Button>
-          ) : (
-            <>
-              <table className="warp-data-table">
-                <tbody>
-                  <tr className="row-odd">
-                    <td>{t('pages.xray.warp.accessToken')}</td>
-                    <td>{warpData?.access_token}</td>
-                  </tr>
-                  <tr>
-                    <td>{t('pages.xray.warp.deviceId')}</td>
-                    <td>{warpData?.device_id}</td>
-                  </tr>
-                  <tr className="row-odd">
-                    <td>{t('pages.xray.warp.licenseKey')}</td>
-                    <td>{warpData?.license_key}</td>
-                  </tr>
-                  <tr>
-                    <td>{t('pages.xray.warp.privateKey')}</td>
-                    <td>{warpData?.private_key}</td>
-                  </tr>
-                </tbody>
-              </table>
 
-              <Button
-                loading={loading}
-                type="primary"
-                danger
-                className="mt-8"
-                icon={<DeleteOutlined />}
-                onClick={delConfig}
-              >
-                {t('pages.xray.warp.deleteAccount')}
-              </Button>
+            <Divider className="zero-margin">{t('pages.xray.warp.settings')}</Divider>
 
-              <Divider className="zero-margin">{t('pages.xray.warp.settings')}</Divider>
-
-              <Collapse
-                className="my-10"
-                items={[
-                  {
-                    key: '1',
-                    label: t('pages.xray.warp.licenseKeyLabel'),
-                    children: (
-                      <Form
-                        colon={false}
-                        labelCol={{ md: { span: 6 } }}
-                        wrapperCol={{ md: { span: 14 } }}
+            <Collapse
+              className="my-10"
+              items={[
+                {
+                  key: '1',
+                  label: t('pages.xray.warp.licenseKeyLabel'),
+                  children: (
+                    <Form colon={false} labelCol={{ md: { span: 6 } }} wrapperCol={{ md: { span: 14 } }}>
+                      <FormField
+                        name="warpPlus"
+                        label={t('pages.xray.warp.key')}
+                        onAfterChange={() => setLicenseError('')}
                       >
-                        <FormField
-                          name="warpPlus"
-                          label={t('pages.xray.warp.key')}
-                          onAfterChange={() => setLicenseError('')}
-                        >
-                          <Input placeholder={t('pages.xray.warp.keyPlaceholder')} />
-                        </FormField>
-                        <div className="license-actions mt-8">
-                          <Button
-                            type="primary"
-                            disabled={warpPlusValue.length < 26}
-                            loading={loading}
-                            onClick={updateLicense}
-                          >
-                            {t('update')}
-                          </Button>
-                          {licenseError && (
-                            <Alert
-                              title={licenseError}
-                              type="error"
-                              showIcon
-                              className="license-error"
-                            />
-                          )}
-                        </div>
-                      </Form>
-                    ),
-                  },
-                  {
-                    key: '2',
-                    label: t('pages.xray.warp.autoUpdateIp', 'Auto Update IP Address'),
-                    children: (
-                      <Form
-                        colon={false}
-                        labelCol={{ md: { span: 8 } }}
-                        wrapperCol={{ md: { span: 12 } }}
-                      >
-                        <FormField
-                          name="updateInterval"
-                          label={t('pages.xray.warp.intervalDays', 'Interval (Days)')}
-                          tooltip={t(
-                            'pages.xray.warp.intervalDesc',
-                            '0 to disable. Changes IP address automatically.',
-                          )}
-                          transform={{ output: (v) => Number(v) }}
-                        >
-                          <Input type="number" min={0} />
-                        </FormField>
+                        <Input placeholder={t('pages.xray.warp.keyPlaceholder')} />
+                      </FormField>
+                      <div className="license-actions mt-8">
                         <Button
-                          className="mt-8"
                           type="primary"
+                          disabled={warpPlusValue.length < 26}
                           loading={loading}
-                          onClick={saveInterval}
+                          onClick={updateLicense}
                         >
-                          {t('save', 'Save')}
+                          {t('update')}
                         </Button>
-                      </Form>
-                    ),
-                  },
-                ]}
-              />
-
-              <Divider className="zero-margin">{t('pages.xray.warp.accountInfo')}</Divider>
-              <div className="my-8">
-                <Button
-                  loading={loading}
-                  type="primary"
-                  icon={<SyncOutlined />}
-                  onClick={getConfig}
-                >
-                  {t('refresh')}
-                </Button>
-                <Button
-                  loading={loading}
-                  type="primary"
-                  className="ml-8"
-                  icon={<SyncOutlined />}
-                  onClick={changeIp}
-                >
-                  {t('pages.xray.warp.changeIp', 'Change IP')}
-                </Button>
-              </div>
-
-              {hasConfig && (
-                <>
-                  <table className="warp-data-table">
-                    <tbody>
-                      <tr className="row-odd">
-                        <td>{t('pages.xray.warp.deviceName')}</td>
-                        <td>{warpConfig?.name}</td>
-                      </tr>
-                      <tr>
-                        <td>{t('pages.xray.warp.deviceModel')}</td>
-                        <td>{warpConfig?.model}</td>
-                      </tr>
-                      <tr className="row-odd">
-                        <td>{t('pages.xray.warp.deviceEnabled')}</td>
-                        <td>{String(warpConfig?.enabled)}</td>
-                      </tr>
-                      {warpConfig?.account && (
-                        <>
-                          <tr>
-                            <td>{t('pages.xray.warp.accountType')}</td>
-                            <td>{warpConfig.account.account_type}</td>
-                          </tr>
-                          <tr className="row-odd">
-                            <td>{t('pages.xray.warp.role')}</td>
-                            <td>{warpConfig.account.role}</td>
-                          </tr>
-                          <tr>
-                            <td>{t('pages.xray.warp.warpPlusData')}</td>
-                            <td>{SizeFormatter.sizeFormat(warpConfig.account.premium_data)}</td>
-                          </tr>
-                          <tr className="row-odd">
-                            <td>{t('pages.xray.warp.quota')}</td>
-                            <td>{SizeFormatter.sizeFormat(warpConfig.account.quota)}</td>
-                          </tr>
-                          {warpConfig.account.usage != null && (
-                            <tr>
-                              <td>{t('pages.xray.warp.usage')}</td>
-                              <td>{SizeFormatter.sizeFormat(warpConfig.account.usage)}</td>
-                            </tr>
-                          )}
-                        </>
-                      )}
-                    </tbody>
-                  </table>
-
-                  <Divider className="my-10">{t('pages.xray.outbound.outboundStatus')}</Divider>
-                  {warpOutboundIndex >= 0 ? (
-                    <>
-                      <Tag color="green">{t('enabled')}</Tag>
-                      <Button
-                        type="primary"
-                        danger
-                        loading={loading}
-                        className="ml-8"
-                        onClick={resetOutbound}
+                        {licenseError && (
+                          <Alert title={licenseError} type="error" showIcon className="license-error" />
+                        )}
+                      </div>
+                    </Form>
+                  ),
+                },
+                {
+                  key: '2',
+                  label: t('pages.xray.warp.autoUpdateIp', 'Auto Update IP Address'),
+                  children: (
+                    <Form colon={false} labelCol={{ md: { span: 8 } }} wrapperCol={{ md: { span: 12 } }}>
+                      <FormField
+                        name="updateInterval"
+                        label={t('pages.xray.warp.intervalDays', 'Interval (Days)')}
+                        tooltip={t('pages.xray.warp.intervalDesc', '0 to disable. Changes IP address automatically.')}
+                        transform={{ output: (v) => Number(v) }}
                       >
-                        {t('reset')}
+                        <Input type="number" min={0} />
+                      </FormField>
+                      <Button className="mt-8" type="primary" loading={loading} onClick={saveInterval}>
+                        {t('save', 'Save')}
                       </Button>
-                    </>
-                  ) : (
-                    <>
-                      <Tag color="orange">{t('disabled')}</Tag>
-                      <Button
-                        type="primary"
-                        loading={loading}
-                        className="ml-8"
-                        icon={<PlusOutlined />}
-                        onClick={addOutbound}
-                      >
-                        {t('pages.xray.warp.addOutbound')}
-                      </Button>
-                    </>
-                  )}
-                </>
-              )}
-            </>
-          )}
+                    </Form>
+                  ),
+                },
+              ]}
+            />
+
+            <Divider className="zero-margin">{t('pages.xray.warp.accountInfo')}</Divider>
+            <div className="my-8">
+              <Button loading={loading} type="primary" icon={<SyncOutlined />} onClick={getConfig}>
+                {t('refresh')}
+              </Button>
+              <Button loading={loading} type="primary" className="ml-8" icon={<SyncOutlined />} onClick={changeIp}>
+                {t('pages.xray.warp.changeIp', 'Change IP')}
+              </Button>
+            </div>
+
+            {hasConfig && (
+              <>
+                <table className="warp-data-table">
+                  <tbody>
+                    <tr className="row-odd">
+                      <td>{t('pages.xray.warp.deviceName')}</td>
+                      <td>{warpConfig?.name}</td>
+                    </tr>
+                    <tr>
+                      <td>{t('pages.xray.warp.deviceModel')}</td>
+                      <td>{warpConfig?.model}</td>
+                    </tr>
+                    <tr className="row-odd">
+                      <td>{t('pages.xray.warp.deviceEnabled')}</td>
+                      <td>{String(warpConfig?.enabled)}</td>
+                    </tr>
+                    {warpConfig?.account && (
+                      <>
+                        <tr>
+                          <td>{t('pages.xray.warp.accountType')}</td>
+                          <td>{warpConfig.account.account_type}</td>
+                        </tr>
+                        <tr className="row-odd">
+                          <td>{t('pages.xray.warp.role')}</td>
+                          <td>{warpConfig.account.role}</td>
+                        </tr>
+                        <tr>
+                          <td>{t('pages.xray.warp.warpPlusData')}</td>
+                          <td>{SizeFormatter.sizeFormat(warpConfig.account.premium_data)}</td>
+                        </tr>
+                        <tr className="row-odd">
+                          <td>{t('pages.xray.warp.quota')}</td>
+                          <td>{SizeFormatter.sizeFormat(warpConfig.account.quota)}</td>
+                        </tr>
+                        {warpConfig.account.usage != null && (
+                          <tr>
+                            <td>{t('pages.xray.warp.usage')}</td>
+                            <td>{SizeFormatter.sizeFormat(warpConfig.account.usage)}</td>
+                          </tr>
+                        )}
+                      </>
+                    )}
+                  </tbody>
+                </table>
+
+                <Divider className="my-10">{t('pages.xray.outbound.outboundStatus')}</Divider>
+                {warpOutboundIndex >= 0 ? (
+                  <>
+                    <Tag color="green">{t('enabled')}</Tag>
+                    <Button type="primary" danger loading={loading} className="ml-8" onClick={resetOutbound}>
+                      {t('reset')}
+                    </Button>
+                  </>
+                ) : (
+                  <>
+                    <Tag color="orange">{t('disabled')}</Tag>
+                    <Button type="primary" loading={loading} className="ml-8" icon={<PlusOutlined />} onClick={addOutbound}>
+                      {t('pages.xray.warp.addOutbound')}
+                    </Button>
+                  </>
+                )}
+              </>
+            )}
+          </>
+        )}
         </FormProvider>
       </Modal>
     </>

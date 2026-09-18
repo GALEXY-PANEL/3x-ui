@@ -1,6 +1,10 @@
 import { z } from 'zod';
 
-const VmessSecurityEnum = z.enum(['aes-128-gcm', 'chacha20-poly1305', 'auto']);
+const VmessSecurityEnum = z.enum([
+  'aes-128-gcm',
+  'chacha20-poly1305',
+  'auto',
+]);
 
 // Legacy rows persisted `security: ""` (especially on VMess inbounds
 // created before the enum was nailed down), and rows predating xray-core

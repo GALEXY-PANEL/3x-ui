@@ -26,9 +26,7 @@ export function useStatusQuery() {
   });
 
   const status = useMemo(() => query.data ?? new Status(), [query.data]);
-  const refresh = async () => {
-    await query.refetch();
-  };
+  const refresh = async () => { await query.refetch(); };
 
   return {
     status,

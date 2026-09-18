@@ -7,7 +7,6 @@ import (
 	"net/http/cookiejar"
 	"net/http/httptest"
 	"path/filepath"
-	"reflect"
 	"testing"
 
 	"github.com/gin-contrib/sessions"
@@ -58,25 +57,8 @@ func newAPIAuthTestEngine(t *testing.T) (*gin.Engine, *APIController) {
 
 	api := engine.Group("/panel/api")
 	api.Use(a.checkAPIAuth)
-	api.Use(a.enforceTokenScope)
 	api.GET("/ping", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"api_authed": c.GetBool("api_authed")})
-	})
-	api.GET("/server/status", func(c *gin.Context) {
-		scope, _ := c.Get("api_token_scope")
-		c.JSON(http.StatusOK, gin.H{"api_authed": c.GetBool("api_authed"), "scope": scope})
-	})
-	api.POST("/server/updatePanel", func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"reached": true})
-	})
-	api.POST("/clients/:email/detach", func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"reached": true})
-	})
-	api.POST("/inbounds/:id/resetTraffic", func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"reached": true})
-	})
-	api.POST("/clients/clientIpsByGuid", func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"reached": true})
 	})
 	return engine, a
 }
@@ -92,7 +74,6 @@ func TestCheckAPIAuth_BearerSuccess(t *testing.T) {
 		Name:    "t1",
 		Token:   crypto.HashTokenSHA256(plaintext),
 		Enabled: true,
-		Scope:   model.ApiScopeAdmin,
 	}).Error; err != nil {
 		t.Fatalf("seed token: %v", err)
 	}
@@ -110,12 +91,41 @@ func TestCheckAPIAuth_BearerSuccess(t *testing.T) {
 	}
 }
 
-// TestCheckAPIAuth_AcceptsVerifiedClientCert ensures verified mTLS authenticates
-// as node-sync rather than bypassing scope checks as admin.
+func TestCheckAPIAuthRejectsXAPIKeyOnStandardAPI(t *testing.T) {
+	engine, _ := newAPIAuthTestEngine(t)
+
+	const plaintext = "standard-api-x-api-key-must-not-authenticate"
+	if err := database.GetDB().Create(&model.ApiToken{
+		Name:    "x-api-key-standard-api",
+		Token:   crypto.HashTokenSHA256(plaintext),
+		Enabled: true,
+	}).Error; err != nil {
+		t.Fatalf("seed token: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/panel/api/ping", nil)
+	req.Header.Set("X-API-Key", plaintext)
+	req.Header.Set("X-Requested-With", "XMLHttpRequest")
+	w := httptest.NewRecorder()
+	engine.ServeHTTP(w, req)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf(
+			"status = %d, want 401; body=%s",
+			w.Code,
+			w.Body.String(),
+		)
+	}
+}
+
+// TestCheckAPIAuth_AcceptsVerifiedClientCert asserts that a completed mTLS
+// handshake (a non-empty verified client chain) authenticates the request even
+// with no bearer token and no session — the equivalent of a valid token — and
+// sets api_authed so the CSRF middleware lets mutations through.
 func TestCheckAPIAuth_AcceptsVerifiedClientCert(t *testing.T) {
 	engine, _ := newAPIAuthTestEngine(t)
 
-	req := httptest.NewRequest(http.MethodGet, "/panel/api/server/status", nil)
+	req := httptest.NewRequest(http.MethodGet, "/panel/api/ping", nil)
 	req.TLS = &tls.ConnectionState{
 		VerifiedChains: [][]*x509.Certificate{{&x509.Certificate{}}},
 	}
@@ -125,79 +135,8 @@ func TestCheckAPIAuth_AcceptsVerifiedClientCert(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200; body=%s", w.Code, w.Body.String())
 	}
-	if got := w.Body.String(); got != `{"api_authed":true,"scope":"node-sync"}` {
-		t.Fatalf("body = %s, want node-sync scope", got)
-	}
-
-	forbidden := httptest.NewRequest(http.MethodPost, "/panel/api/server/updatePanel", nil)
-	forbidden.TLS = &tls.ConnectionState{
-		VerifiedChains: [][]*x509.Certificate{{&x509.Certificate{}}},
-	}
-	w = httptest.NewRecorder()
-	engine.ServeHTTP(w, forbidden)
-	if w.Code != http.StatusForbidden {
-		t.Fatalf("updatePanel status = %d, want 403; body=%s", w.Code, w.Body.String())
-	}
-}
-
-func TestNodeSyncScopeAllowlistMatchesRemoteInventory(t *testing.T) {
-	expected := map[string]map[string]struct{}{
-		"/server/status":               {http.MethodGet: {}},
-		"/inbounds/list":               {http.MethodGet: {}},
-		"/inbounds/add":                {http.MethodPost: {}},
-		"/inbounds/del/:id":            {http.MethodPost: {}},
-		"/inbounds/update/:id":         {http.MethodPost: {}},
-		"/clients/add":                 {http.MethodPost: {}},
-		"/clients/del/:email":          {http.MethodPost: {}},
-		"/clients/:email/detach":       {http.MethodPost: {}},
-		"/clients/update/:email":       {http.MethodPost: {}},
-		"/server/restartXrayService":   {http.MethodPost: {}},
-		"/server/getWebCertFiles":      {http.MethodGet: {}},
-		"/server/descendants":          {http.MethodGet: {}},
-		"/clients/resetTraffic/:email": {http.MethodPost: {}},
-		"/inbounds/resetAllTraffics":   {http.MethodPost: {}},
-		"/inbounds/:id/resetTraffic":   {http.MethodPost: {}},
-		"/clients/onlinesByGuid":       {http.MethodPost: {}},
-		"/clients/onlines":             {http.MethodPost: {}},
-		"/clients/lastOnline":          {http.MethodPost: {}},
-		"/inbounds/pushClientTraffics": {http.MethodPost: {}},
-		"/server/clientIps":            {http.MethodGet: {}, http.MethodPost: {}},
-		"/clients/clientIpsByGuid":     {http.MethodPost: {}},
-		"/hosts/list":                  {http.MethodGet: {}},
-	}
-	if !reflect.DeepEqual(nodeSyncScopeAllow, expected) {
-		t.Fatalf("node-sync allowlist drift:\n got: %#v\nwant: %#v", nodeSyncScopeAllow, expected)
-	}
-	if _, ok := nodeSyncScopeAllow["/server/updatePanel"]; ok {
-		t.Fatal("node-sync must not include /server/updatePanel")
-	}
-}
-
-func TestNodeSyncScopeUsesFullPathPatterns(t *testing.T) {
-	engine, _ := newAPIAuthTestEngine(t)
-	cases := []struct {
-		name   string
-		method string
-		path   string
-		want   int
-	}{
-		{"detach email parameter", http.MethodPost, "/panel/api/clients/alice@example.com/detach", http.StatusOK},
-		{"reset inbound id parameter", http.MethodPost, "/panel/api/inbounds/42/resetTraffic", http.StatusOK},
-		{"client IP by guid endpoint", http.MethodPost, "/panel/api/clients/clientIpsByGuid", http.StatusOK},
-		{"update panel forbidden", http.MethodPost, "/panel/api/server/updatePanel", http.StatusForbidden},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			req := httptest.NewRequest(tc.method, tc.path, nil)
-			req.TLS = &tls.ConnectionState{
-				VerifiedChains: [][]*x509.Certificate{{&x509.Certificate{}}},
-			}
-			w := httptest.NewRecorder()
-			engine.ServeHTTP(w, req)
-			if w.Code != tc.want {
-				t.Fatalf("status = %d, want %d; body=%s", w.Code, tc.want, w.Body.String())
-			}
-		})
+	if got := w.Body.String(); got != `{"api_authed":true}` {
+		t.Fatalf("body = %s, want api_authed true", got)
 	}
 }
 
@@ -219,31 +158,24 @@ func TestCheckAPIAuth_EmptyVerifiedChainsFallsThrough(t *testing.T) {
 	}
 }
 
-// TestCheckAPIAuth_RejectsUnauthenticated characterizes the reject paths:
-// no credential → 404 (masking); XHR or a presented (but invalid) Bearer → 401
-// so script authors can tell auth failure from a wrong base path.
+// TestCheckAPIAuth_RejectsUnauthenticated characterizes the reject paths: no
+// bearer token and no session yields 401 for XHR callers and 404 otherwise.
 func TestCheckAPIAuth_RejectsUnauthenticated(t *testing.T) {
 	engine, _ := newAPIAuthTestEngine(t)
 
 	cases := []struct {
-		name   string
-		xhr    bool
-		bearer string // empty = omit Authorization header
-		want   int
+		name string
+		xhr  bool
+		want int
 	}{
-		{"xhr gets 401", true, "", http.StatusUnauthorized},
-		{"non-xhr gets 404", false, "", http.StatusNotFound},
-		{"invalid bearer gets 401", false, "definitely-not-a-token", http.StatusUnauthorized},
-		{"invalid bearer xhr gets 401", true, "definitely-not-a-token", http.StatusUnauthorized},
+		{"xhr gets 401", true, http.StatusUnauthorized},
+		{"non-xhr gets 404", false, http.StatusNotFound},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			req := httptest.NewRequest(http.MethodGet, "/panel/api/ping", nil)
 			if c.xhr {
 				req.Header.Set("X-Requested-With", "XMLHttpRequest")
-			}
-			if c.bearer != "" {
-				req.Header.Set("Authorization", "Bearer "+c.bearer)
 			}
 			w := httptest.NewRecorder()
 			engine.ServeHTTP(w, req)

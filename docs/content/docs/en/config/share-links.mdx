@@ -1,10 +1,10 @@
 ---
 title: Share Links
-description: 3x-ui share-link formats (vless, vmess, trojan, ss, hysteria2, mtproto), the remark template variables, and an in-browser link inspector.
+description: Heimdall share-link formats (vless, vmess, trojan, ss, hysteria2, mtproto), the remark template variables, and an in-browser link inspector.
 icon: Link
 ---
 
-3x-ui generates a **share link** (and QR code) for each client. Client apps such
+Heimdall generates a **share link** (and QR code) for each client. Client apps such
 as v2rayNG, Hiddify, and Mihomo import these links to configure themselves.
 
 ## Link formats
@@ -17,7 +17,6 @@ as v2rayNG, Hiddify, and Mihomo import these links to configure themselves.
 | `ss://`        | `ss://<userinfo>@<host>:<port>?<params>#<remark>` (SIP002; Shadowsocks-2022 uses percent-encoded userinfo) |
 | `hysteria2://` | `hysteria2://<auth>@<host>:<port>?<params>#<remark>`            |
 | `tg://proxy`   | `tg://proxy?server=…&port=…&secret=…` (MTProto)                 |
-| `tuic://`      | `tuic://<uuid>:<password>@<host>:<port>?<params>#<remark>` (TUIC v5) |
 
 The query parameters carry the transport and security settings — `security`,
 `sni`, `fp`, `pbk`, `sid`, `spx`, `flow`, `type`, `path`, `host`, `alpn`, and

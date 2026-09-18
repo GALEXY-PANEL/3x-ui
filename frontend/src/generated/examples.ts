@@ -2,21 +2,9 @@
 export const EXAMPLES: Record<string, unknown> = {
   "AllSetting": {
     "datepicker": "",
-    "discordAdminIds": "",
-    "discordBotBackup": false,
-    "discordBotEnable": false,
-    "discordBotToken": "",
-    "discordChannelId": "",
-    "discordCpu": 0,
-    "discordEnabledEvents": "",
-    "discordLang": "",
-    "discordMemory": 0,
-    "discordRunTime": "",
     "expireDiff": 0,
     "externalTrafficInformEnable": false,
     "externalTrafficInformURI": "",
-    "happLinkEnable": false,
-    "ipLimitAllowlist": "",
     "ldapAutoCreate": false,
     "ldapAutoDelete": false,
     "ldapBaseDN": "",
@@ -38,10 +26,8 @@ export const EXAMPLES: Record<string, unknown> = {
     "ldapUserAttr": "",
     "ldapUserFilter": "",
     "ldapVlessField": "",
-    "outboundDownThreshold": 1,
     "pageSize": 0,
     "panelOutbound": "",
-    "realityScanCandidates": "",
     "remarkTemplate": "",
     "restartXrayOnClientDisable": false,
     "sessionMaxAge": 1,
@@ -49,8 +35,6 @@ export const EXAMPLES: Record<string, unknown> = {
     "smtpEnable": false,
     "smtpEnabledEvents": "",
     "smtpEncryptionType": "",
-    "smtpFrom": "",
-    "smtpFromName": "",
     "smtpHost": "",
     "smtpMemory": 0,
     "smtpPassword": "",
@@ -58,71 +42,35 @@ export const EXAMPLES: Record<string, unknown> = {
     "smtpTo": "",
     "smtpUsername": "",
     "subAnnounce": "",
-    "subCalendarExpireInclusive": false,
     "subCertFile": "",
-    "subClashAutoDetect": false,
     "subClashEnable": false,
     "subClashEnableRouting": false,
     "subClashPath": "",
     "subClashRules": "",
     "subClashURI": "",
-    "subClashUserAgentRegex": "",
+    "subClientImportFormat": "",
     "subDomain": "",
     "subEnable": false,
     "subEnableRouting": false,
     "subEncrypt": false,
-    "subExpiredTemplate": "",
-    "subHappAlwaysHwid": false,
-    "subHappAutoConnect": false,
-    "subHappAutoConnectType": "",
-    "subHappAutoDetect": false,
-    "subHappColorProfile": "",
-    "subHappExcludeApns": false,
-    "subHappExcludeRoutes": "",
-    "subHappFallbackUrl": "",
-    "subHappNewUrl": "",
-    "subHappNoLimit": false,
-    "subHappNotificationExpire": false,
-    "subHappPerAppList": "",
-    "subHappPerAppMode": "",
-    "subHappPingType": "",
-    "subHappProviderId": "",
-    "subHappSubExpire": false,
-    "subHappSubExpireButtonLink": "",
-    "subHappSubInfoButtonLink": "",
-    "subHappSubInfoButtonText": "",
-    "subHappSubInfoColor": "",
-    "subHappSubInfoText": "",
-    "subHappTunMode": "",
-    "subHappTunType": "",
     "subHideSettings": false,
     "subIncyEnableRouting": false,
     "subIncyRoutingRules": "",
-    "subInfoNodeEnable": false,
-    "subJsonAlwaysArray": false,
-    "subJsonAutoDetect": false,
-    "subJsonDns": "",
     "subJsonEnable": false,
     "subJsonFinalMask": "",
     "subJsonMux": "",
-    "subJsonObservatory": "",
     "subJsonPath": "",
-    "subJsonRoutingRules": "",
     "subJsonRules": "",
     "subJsonURI": "",
-    "subJsonUserAgentRegex": "",
     "subKeyFile": "",
     "subListen": "",
     "subPath": "",
     "subPort": 1,
-    "subProfileMode": "",
     "subProfileUrl": "",
     "subRoutingRules": "",
-    "subShowIdentityOnAllLinks": false,
     "subSupportUrl": "",
     "subThemeDir": "",
     "subTitle": "",
-    "subTrafficDepletedTemplate": "",
     "subURI": "",
     "subUpdates": 0,
     "tgBotAPIServer": "",
@@ -151,29 +99,16 @@ export const EXAMPLES: Record<string, unknown> = {
   },
   "AllSettingView": {
     "datepicker": "",
-    "discordAdminIds": "",
-    "discordBotBackup": false,
-    "discordBotEnable": false,
-    "discordBotToken": "",
-    "discordChannelId": "",
-    "discordCpu": 0,
-    "discordEnabledEvents": "",
-    "discordLang": "",
-    "discordMemory": 0,
-    "discordRunTime": "",
     "expireDiff": 0,
     "externalTrafficInformEnable": false,
     "externalTrafficInformURI": "",
-    "happLinkEnable": false,
     "hasApiToken": false,
-    "hasDiscordBotToken": false,
     "hasLdapPassword": false,
     "hasNordSecret": false,
     "hasSmtpPassword": false,
     "hasTgBotToken": false,
     "hasTwoFactorToken": false,
     "hasWarpSecret": false,
-    "ipLimitAllowlist": "",
     "ldapAutoCreate": false,
     "ldapAutoDelete": false,
     "ldapBaseDN": "",
@@ -195,10 +130,8 @@ export const EXAMPLES: Record<string, unknown> = {
     "ldapUserAttr": "",
     "ldapUserFilter": "",
     "ldapVlessField": "",
-    "outboundDownThreshold": 1,
     "pageSize": 0,
     "panelOutbound": "",
-    "realityScanCandidates": "",
     "remarkTemplate": "",
     "restartXrayOnClientDisable": false,
     "sessionMaxAge": 1,
@@ -206,8 +139,6 @@ export const EXAMPLES: Record<string, unknown> = {
     "smtpEnable": false,
     "smtpEnabledEvents": "",
     "smtpEncryptionType": "",
-    "smtpFrom": "",
-    "smtpFromName": "",
     "smtpHost": "",
     "smtpMemory": 0,
     "smtpPassword": "",
@@ -215,71 +146,35 @@ export const EXAMPLES: Record<string, unknown> = {
     "smtpTo": "",
     "smtpUsername": "",
     "subAnnounce": "",
-    "subCalendarExpireInclusive": false,
     "subCertFile": "",
-    "subClashAutoDetect": false,
     "subClashEnable": false,
     "subClashEnableRouting": false,
     "subClashPath": "",
     "subClashRules": "",
     "subClashURI": "",
-    "subClashUserAgentRegex": "",
+    "subClientImportFormat": "",
     "subDomain": "",
     "subEnable": false,
     "subEnableRouting": false,
     "subEncrypt": false,
-    "subExpiredTemplate": "",
-    "subHappAlwaysHwid": false,
-    "subHappAutoConnect": false,
-    "subHappAutoConnectType": "",
-    "subHappAutoDetect": false,
-    "subHappColorProfile": "",
-    "subHappExcludeApns": false,
-    "subHappExcludeRoutes": "",
-    "subHappFallbackUrl": "",
-    "subHappNewUrl": "",
-    "subHappNoLimit": false,
-    "subHappNotificationExpire": false,
-    "subHappPerAppList": "",
-    "subHappPerAppMode": "",
-    "subHappPingType": "",
-    "subHappProviderId": "",
-    "subHappSubExpire": false,
-    "subHappSubExpireButtonLink": "",
-    "subHappSubInfoButtonLink": "",
-    "subHappSubInfoButtonText": "",
-    "subHappSubInfoColor": "",
-    "subHappSubInfoText": "",
-    "subHappTunMode": "",
-    "subHappTunType": "",
     "subHideSettings": false,
     "subIncyEnableRouting": false,
     "subIncyRoutingRules": "",
-    "subInfoNodeEnable": false,
-    "subJsonAlwaysArray": false,
-    "subJsonAutoDetect": false,
-    "subJsonDns": "",
     "subJsonEnable": false,
     "subJsonFinalMask": "",
     "subJsonMux": "",
-    "subJsonObservatory": "",
     "subJsonPath": "",
-    "subJsonRoutingRules": "",
     "subJsonRules": "",
     "subJsonURI": "",
-    "subJsonUserAgentRegex": "",
     "subKeyFile": "",
     "subListen": "",
     "subPath": "",
     "subPort": 1,
-    "subProfileMode": "",
     "subProfileUrl": "",
     "subRoutingRules": "",
-    "subShowIdentityOnAllLinks": false,
     "subSupportUrl": "",
     "subThemeDir": "",
     "subTitle": "",
-    "subTrafficDepletedTemplate": "",
     "subURI": "",
     "subUpdates": 0,
     "tgBotAPIServer": "",
@@ -306,78 +201,65 @@ export const EXAMPLES: Record<string, unknown> = {
     "webListen": "",
     "webPort": 1
   },
-  "AmneziaWGLogs": {
-    "events": [
-      "2025/01/01 12:00:00 amneziawg: started interface awg1 for inbound 1"
-    ],
-    "peers": [
-      {
-        "allowedIPs": "10.8.1.2/32",
-        "down": 4194304,
-        "email": "peer@example.com",
-        "endpoint": "203.0.113.9:51820",
-        "handshake": 1735732800000,
-        "inboundId": 1,
-        "interface": "awg1",
-        "online": true,
-        "tag": "inbound-51820",
-        "up": 1048576
-      }
-    ],
-    "running": true
-  },
   "ApiToken": {
     "createdAt": 0,
+    "createdByAdminId": null,
     "enabled": false,
     "expiresAt": 0,
     "id": 0,
+    "kind": "",
     "name": "",
-    "scope": "",
-    "token": ""
+    "subjectAdminId": null
   },
   "ApiTokenView": {
     "createdAt": 1736000000,
+    "createdByAdminId": 1,
     "enabled": true,
-    "expiresAt": 0,
+    "expired": false,
+    "expiresAt": 1767536000,
     "id": 2,
-    "name": "central-panel-a",
-    "scope": "admin",
-    "token": "new-token-string"
+    "kind": "delegated",
+    "name": "telegram-bot-a",
+    "scopes": [
+      "clients:read",
+      "clients:create"
+    ],
+    "subjectAdminId": 3,
+    "subjectRoleName": "Operator",
+    "subjectUsername": "operator-a",
+    "token": "hmd_d_new-token-string"
   },
   "Client": {
     "adTag": "0123456789abcdef0123456789abcdef",
     "allowedIPs": [
       ""
     ],
-    "allowedIPsByInbound": {},
     "auth": "",
+    "clientGuid": "",
     "comment": "",
     "created_at": 0,
+    "downloadMbps": 0,
     "email": "",
     "enable": false,
     "expiryTime": 0,
     "flow": "",
-    "forwardedPorts": "",
     "group": "",
     "id": "",
-    "keepAlive": null,
+    "keepAlive": 0,
     "limitIp": 0,
     "password": "",
     "preSharedKey": "",
     "privateKey": "",
     "publicKey": "",
     "reset": 0,
-    "resetDay": 0,
-    "resetMax": 0,
     "reverse": null,
     "secret": "ee1234567890abcdef1234567890abcd7777772e636c6f7564666c6172652e636f6d",
     "security": "",
     "subId": "",
     "tgId": 0,
     "totalGB": 0,
-    "trafficReset": "never",
-    "trafficResetDay": 1,
-    "updated_at": 0
+    "updated_at": 0,
+    "uploadMbps": 0
   },
   "ClientInbound": {
     "clientId": 0,
@@ -385,112 +267,42 @@ export const EXAMPLES: Record<string, unknown> = {
     "flowOverride": "",
     "inboundId": 0
   },
-  "ClientPageResponse": {
-    "filtered": 47,
-    "groups": [
-      "staff",
-      "trial"
-    ],
-    "items": [
-      {
-        "comment": "Primary device",
-        "createdAt": 1735000000000,
-        "email": "alice@example.com",
-        "enable": true,
-        "expiryTime": 1735689600000,
-        "group": "staff",
-        "inboundIds": [
-          3,
-          5
-        ],
-        "limitHwid": 0,
-        "limitIp": 0,
-        "reset": 0,
-        "resetDay": 0,
-        "resetMax": 0,
-        "subId": "abcd1234",
-        "totalGB": 53687091200,
-        "traffic": null,
-        "updatedAt": 1735100000000
-      }
-    ],
-    "page": 1,
-    "pageSize": 25,
-    "summary": {
-      "active": 1850,
-      "deactive": [
-        "bob@example.com"
-      ],
-      "deactiveCount": 150,
-      "depleted": [],
-      "depletedCount": 0,
-      "expiring": [],
-      "expiringCount": 0,
-      "online": [
-        "alice@example.com"
-      ],
-      "onlineCount": 1,
-      "total": 2000
-    },
-    "total": 2000
-  },
   "ClientRecord": {
     "adTag": "",
     "allowedIPs": "",
     "auth": "",
+    "clientGuid": "",
     "comment": "",
     "createdAt": 0,
+    "createdByAdminId": 0,
+    "disabledByOwnerAdminId": 0,
+    "downloadMbps": 0,
     "email": "",
     "enable": false,
     "expiryTime": 0,
     "flow": "",
-    "forwardedPorts": "",
     "group": "",
     "id": 0,
     "keepAlive": 0,
-    "limitHwid": 0,
     "limitIp": 0,
+    "ownerAdminId": 0,
     "password": "",
     "preSharedKey": "",
     "privateKey": "",
     "publicKey": "",
     "reset": 0,
-    "resetDay": 0,
-    "resetMax": 0,
     "reverse": null,
     "secret": "",
     "security": "",
     "subId": "",
     "tgId": 0,
     "totalGB": 0,
-    "trafficReset": "",
-    "trafficResetDay": 0,
     "updatedAt": 0,
+    "uploadMbps": 0,
     "uuid": ""
   },
   "ClientReverse": {
     "tag": ""
-  },
-  "ClientSlim": {
-    "comment": "Primary device",
-    "createdAt": 1735000000000,
-    "email": "alice@example.com",
-    "enable": true,
-    "expiryTime": 1735689600000,
-    "group": "staff",
-    "inboundIds": [
-      3,
-      5
-    ],
-    "limitHwid": 0,
-    "limitIp": 0,
-    "reset": 0,
-    "resetDay": 0,
-    "resetMax": 0,
-    "subId": "abcd1234",
-    "totalGB": 53687091200,
-    "traffic": null,
-    "updatedAt": 1735100000000
   },
   "ClientTraffic": {
     "down": 2097152,
@@ -500,86 +312,15 @@ export const EXAMPLES: Record<string, unknown> = {
     "id": 14825,
     "inboundId": 1,
     "lastOnline": 1735680000000,
-    "lastSubFetch": 1735680000000,
     "reset": 0,
-    "resetCount": 0,
-    "resetDay": 0,
-    "resetMax": 0,
     "subId": "i7tvdpeffi0hvvf1",
     "total": 10737418240,
     "up": 1048576,
     "uuid": "e18c9a96-71bf-48d4-933f-8b9a46d4290c"
   },
-  "ClientsSummary": {
-    "active": 1850,
-    "deactive": [
-      "bob@example.com"
-    ],
-    "deactiveCount": 150,
-    "depleted": [],
-    "depletedCount": 0,
-    "expiring": [],
-    "expiringCount": 0,
-    "online": [
-      "alice@example.com"
-    ],
-    "onlineCount": 1,
-    "total": 2000
-  },
   "FallbackParentInfo": {
     "masterId": 0,
     "path": ""
-  },
-  "GeoCategory": {
-    "attributes": [
-      "ads",
-      "cn"
-    ],
-    "code": "google",
-    "entries": 1284
-  },
-  "GeoCategoryPage": {
-    "items": [
-      {
-        "attributes": [
-          "ads",
-          "cn"
-        ],
-        "code": "google",
-        "entries": 1284
-      }
-    ],
-    "total": 1043
-  },
-  "GeoEntry": {
-    "kind": "domain",
-    "value": "google.com"
-  },
-  "GeoEntryPage": {
-    "items": [
-      {
-        "kind": "domain",
-        "value": "google.com"
-      }
-    ],
-    "total": 1284
-  },
-  "GeoFile": {
-    "categories": 1043,
-    "error": "",
-    "kind": "site",
-    "modifiedAt": 1769558400000,
-    "name": "geosite.dat",
-    "size": 1467392
-  },
-  "GeodataTokenIssue": {
-    "code": "blabla",
-    "file": "geosite.dat",
-    "reason": "categoryMissing",
-    "token": "geosite:blabla"
-  },
-  "HappLinkResult": {
-    "encryptedLink": "happ://crypt5/example"
   },
   "HistoryOfSeeders": {
     "id": 0,
@@ -591,7 +332,6 @@ export const EXAMPLES: Record<string, unknown> = {
     "alpn": [
       ""
     ],
-    "cipherSuites": "",
     "createdAt": 0,
     "echConfigList": "",
     "excludeFromSubTypes": [
@@ -637,7 +377,6 @@ export const EXAMPLES: Record<string, unknown> = {
     "alpn": [
       ""
     ],
-    "cipherSuites": "",
     "echConfigList": "",
     "excludeFromSubTypes": [
       ""
@@ -680,13 +419,6 @@ export const EXAMPLES: Record<string, unknown> = {
     "verifyPeerCertByName": "",
     "vlessRoute": ""
   },
-  "HwidSlotStatus": {
-    "active": true,
-    "full": false,
-    "limit": 2,
-    "registered": 1,
-    "remaining": 1
-  },
   "Inbound": {
     "clientStats": [
       {
@@ -697,18 +429,13 @@ export const EXAMPLES: Record<string, unknown> = {
         "id": 14825,
         "inboundId": 1,
         "lastOnline": 1735680000000,
-        "lastSubFetch": 1735680000000,
         "reset": 0,
-        "resetCount": 0,
-        "resetDay": 0,
-        "resetMax": 0,
         "subId": "i7tvdpeffi0hvvf1",
         "total": 10737418240,
         "up": 1048576,
         "uuid": "e18c9a96-71bf-48d4-933f-8b9a46d4290c"
       }
     ],
-    "disableFlow": false,
     "down": 0,
     "enable": true,
     "expiryTime": 0,
@@ -730,8 +457,8 @@ export const EXAMPLES: Record<string, unknown> = {
     "tag": "in-443-tcp",
     "total": 0,
     "trafficReset": "never",
-    "trafficResetDay": 1,
-    "up": 0
+    "up": 0,
+    "usageMultiplier": 1
   },
   "InboundClientIps": {
     "clientEmail": "",
@@ -750,64 +477,34 @@ export const EXAMPLES: Record<string, unknown> = {
     "xver": 0
   },
   "InboundOption": {
-    "awgServer": null,
     "enable": true,
     "id": 1,
     "listen": "",
     "mtprotoDomain": "",
-    "network": "",
     "nodeAddress": "",
     "nodeId": null,
     "port": 443,
     "protocol": "vless",
     "remark": "VLESS-443",
-    "security": "",
     "shareAddr": "",
     "shareAddrStrategy": "",
     "ssMethod": "",
     "tag": "in-443-tcp",
     "tlsFlowCapable": true,
-    "tuicServer": null,
     "wgDns": "",
     "wgMtu": 0,
     "wgPublicKey": ""
-  },
-  "InboundTrafficSummary": {
-    "down": 2097152,
-    "enable": true,
-    "id": 1,
-    "total": 10737418240,
-    "up": 1048576
-  },
-  "LogEntry": {
-    "DateTime": "2025-01-01T12:00:00Z",
-    "Email": "alice@example.com",
-    "Event": 0,
-    "FromAddress": "192.0.2.10:54321",
-    "Inbound": "inbound-443",
-    "Outbound": "direct",
-    "ToAddress": "example.com:443"
-  },
-  "MLDSA65Response": {
-    "seed": "mldsa65-seed",
-    "verify": "mldsa65-verify"
-  },
-  "MLKEM768Response": {
-    "client": "mlkem768-client",
-    "seed": "mlkem768-seed"
   },
   "Msg": {
     "msg": "",
     "obj": null,
     "success": false
   },
-  "NewUUIDResponse": {
-    "uuid": "550e8400-e29b-41d4-a716-446655440000"
-  },
   "Node": {
     "activeCount": 23,
     "address": "node1.example.com",
     "allowPrivateAddress": false,
+    "apiToken": "abcdef0123456789",
     "basePath": "/",
     "clientCount": 27,
     "configDirty": false,
@@ -848,71 +545,6 @@ export const EXAMPLES: Record<string, unknown> = {
     "xrayState": "",
     "xrayVersion": "25.10.31"
   },
-  "NodeMutationRequest": {
-    "address": "",
-    "allowPrivateAddress": false,
-    "apiToken": null,
-    "basePath": "",
-    "clearApiToken": false,
-    "enable": false,
-    "id": 0,
-    "inboundSyncMode": "all",
-    "inboundTags": [
-      ""
-    ],
-    "name": "",
-    "outboundTag": "",
-    "pinnedCertSha256": "",
-    "port": 1,
-    "remark": "",
-    "scheme": "http",
-    "tlsVerifyMode": "verify"
-  },
-  "NodeView": {
-    "activeCount": 20,
-    "address": "node.example.com",
-    "allowPrivateAddress": false,
-    "basePath": "/",
-    "clientCount": 25,
-    "configDirty": false,
-    "configDirtyAt": 0,
-    "cpuPct": 12.5,
-    "createdAt": 1700000000,
-    "depletedCount": 1,
-    "disabledCount": 2,
-    "enable": true,
-    "guid": "node-guid",
-    "hasApiToken": true,
-    "id": 1,
-    "inboundCount": 3,
-    "inboundSyncMode": "all",
-    "inboundTags": [
-      "in-443-tcp"
-    ],
-    "lastError": "",
-    "lastHeartbeat": 1700000000,
-    "latencyMs": 42,
-    "memPct": 45.2,
-    "name": "edge-1",
-    "netDown": 1048576,
-    "netUp": 2097152,
-    "onlineCount": 5,
-    "outboundTag": "direct",
-    "panelVersion": "v3.x.x",
-    "parentGuid": "",
-    "pinnedCertSha256": "",
-    "port": 2053,
-    "remark": "Primary edge",
-    "scheme": "https",
-    "status": "online",
-    "tlsVerifyMode": "verify",
-    "transitive": false,
-    "updatedAt": 1700003600,
-    "uptimeSecs": 86400,
-    "xrayError": "",
-    "xrayState": "running",
-    "xrayVersion": "25.10.31"
-  },
   "OutboundTraffics": {
     "down": 0,
     "id": 0,
@@ -925,18 +557,6 @@ export const EXAMPLES: Record<string, unknown> = {
     "finishedAt": 1735689612,
     "runId": "1735689600123456789",
     "state": "success"
-  },
-  "PeerActivity": {
-    "allowedIPs": "10.8.1.2/32",
-    "down": 4194304,
-    "email": "peer@example.com",
-    "endpoint": "203.0.113.9:51820",
-    "handshake": 1735732800000,
-    "inboundId": 1,
-    "interface": "awg1",
-    "online": true,
-    "tag": "inbound-51820",
-    "up": 1048576
   },
   "ProbeResultUI": {
     "cpuPct": 12.5,
@@ -952,8 +572,6 @@ export const EXAMPLES: Record<string, unknown> = {
   },
   "RealityScanResult": {
     "alpn": "h2",
-    "certChainBytes": 3427,
-    "certChainValid": true,
     "certIssuer": "Google Trust Services",
     "certSubject": "cloudflare.com",
     "certValid": true,
@@ -965,7 +583,6 @@ export const EXAMPLES: Record<string, unknown> = {
     "latencyMs": 180,
     "notAfter": "2026-08-01T00:00:00Z",
     "port": 443,
-    "privateTarget": false,
     "reason": "",
     "serverNames": [
       ""
@@ -975,94 +592,29 @@ export const EXAMPLES: Record<string, unknown> = {
     "tlsVersion": "1.3",
     "x25519": true
   },
-  "ServerSettings": {
-    "contentPaddingAddition": "",
-    "disableCookies": false,
-    "externalInterface": "",
-    "h1": "",
-    "h2": "",
-    "h3": "",
-    "h4": "",
-    "headerProtectionKey": "",
-    "i1": "",
-    "i2": "",
-    "i3": "",
-    "i4": "",
-    "i5": "",
-    "ipv6Enabled": false,
-    "ipv6ExternalInterface": "",
-    "ipv6Subnet": "",
-    "jc": 0,
-    "jmax": 0,
-    "jmin": 0,
-    "keepaliveTimeout": "",
-    "maxHandshakeAttempts": "",
-    "mtu": 0,
-    "primaryDns": "",
-    "privateKey": "",
-    "publicKey": "",
-    "randomTrailers": false,
-    "rejectAfterTime": "",
-    "rekeyAfterTime": "",
-    "rekeyTimeout": "",
-    "routeThroughXray": false,
-    "s1": 0,
-    "s2": 0,
-    "s3": 0,
-    "s4": 0,
-    "secondaryDns": "",
-    "subnetCidr": 0,
-    "subnetIp": ""
-  },
   "Setting": {
     "id": 0,
     "key": "",
     "value": ""
   },
-  "SubBalancer": {
-    "createdAt": 1710000000000,
-    "enabled": true,
-    "id": 1,
-    "inboundIds": [
-      1,
-      3
-    ],
-    "memberWeights": {},
-    "remark": "auto-fastest",
-    "sortOrder": 1,
-    "strategy": "random",
-    "updatedAt": 1710000000000
-  },
-  "Traffic": {
-    "Down": 2097152,
-    "IsInbound": true,
-    "IsOutbound": false,
-    "Tag": "inbound-443",
-    "Up": 1048576
-  },
-  "TuicClientSettings": {
-    "email": "",
-    "password": "",
-    "uuid": ""
-  },
-  "TuicServerSettings": {
-    "alpn": [
-      ""
-    ],
-    "authentication_timeout": 0,
-    "certificate": "",
-    "congestion_control": "",
-    "log_level": "",
-    "max_idle_time": 0,
-    "max_udp_relay_packet_size": 0,
-    "private_key": "",
-    "sni": "",
-    "udp_relay_mode": "",
-    "zero_rtt_handshake": false
-  },
   "User": {
+    "createdAt": 0,
+    "dataLimit": 0,
+    "discordWebhook": "",
     "id": 0,
+    "note": "",
+    "notificationFilters": "",
     "password": "",
+    "permissionOverrides": "",
+    "profileTitle": "",
+    "roleId": 0,
+    "status": "",
+    "subscriptionDomain": "",
+    "subscriptionTemplatePath": "",
+    "supportUrl": "",
+    "telegramId": "",
+    "updatedAt": 0,
+    "usedBytes": 0,
     "username": ""
   }
 };

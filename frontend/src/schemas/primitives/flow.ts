@@ -1,6 +1,10 @@
 import { z } from 'zod';
 
-export const FlowSchema = z.enum(['', 'xtls-rprx-vision', 'xtls-rprx-vision-udp443']);
+export const FlowSchema = z.enum([
+  '',
+  'xtls-rprx-vision',
+  'xtls-rprx-vision-udp443',
+]);
 export type Flow = z.infer<typeof FlowSchema>;
 
 // Const map matching the legacy models/inbound.ts `TLS_FLOW_CONTROL`

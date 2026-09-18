@@ -2,12 +2,11 @@ package service
 
 import (
 	"encoding/json"
-	"strings"
 )
 
 var routingMatcherKeys = []string{
-	"domain", "domains", "ip", "port", "sourcePort", "localPort", "network",
-	"source", "sourceIP", "localIP", "user", "vlessRoute", "protocol", "attrs", "process",
+	"domain", "ip", "port", "sourcePort", "localPort", "network",
+	"sourceIP", "localIP", "user", "vlessRoute", "protocol", "attrs", "process",
 }
 
 func readInboundTags(raw any) []string {
@@ -143,7 +142,7 @@ func replaceInboundTagInOutbounds(outbounds []any, oldTag, newTag string) bool {
 			continue
 		}
 		proto, _ := out["protocol"].(string)
-		if !strings.EqualFold(proto, "loopback") {
+		if proto != "loopback" {
 			continue
 		}
 		settings, ok := out["settings"].(map[string]any)
@@ -168,7 +167,7 @@ func removeInboundTagFromOutbounds(outbounds []any, deletedTag string) bool {
 			continue
 		}
 		proto, _ := out["protocol"].(string)
-		if !strings.EqualFold(proto, "loopback") {
+		if proto != "loopback" {
 			continue
 		}
 		settings, ok := out["settings"].(map[string]any)

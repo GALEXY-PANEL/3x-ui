@@ -28,9 +28,11 @@ function serializeClientSockopt(sockopt: unknown): string {
 export default function HostSockoptForm({
   value,
   onChange,
+  variant = 'default',
 }: {
   value?: string;
   onChange?: (next: string) => void;
+  variant?: 'default' | 'profile';
 }) {
   /*
    * Populate the dialerProxy dropdown with the panel's outbound tags (a host can
@@ -47,7 +49,9 @@ export default function HostSockoptForm({
       onChange={onChange}
       path={['streamSettings', 'sockopt']}
       serialize={serializeClientSockopt}
-      render={() => <SockoptForm outboundTags={outboundTags} />}
+      render={() => (
+        <SockoptForm outboundTags={outboundTags} variant={variant} />
+      )}
     />
   );
 }

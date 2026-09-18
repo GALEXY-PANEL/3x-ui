@@ -7,12 +7,12 @@ import (
 	"strings"
 	"time"
 
+	"github.com/GALEXY-PANEL/3x-ui/v3/internal/database/model"
 	"github.com/GALEXY-PANEL/3x-ui/v3/internal/logger"
 	"github.com/GALEXY-PANEL/3x-ui/v3/internal/util/crypto"
 	"github.com/GALEXY-PANEL/3x-ui/v3/internal/web/entity"
 	"github.com/GALEXY-PANEL/3x-ui/v3/internal/web/middleware"
 	"github.com/GALEXY-PANEL/3x-ui/v3/internal/web/service"
-	"github.com/GALEXY-PANEL/3x-ui/v3/internal/web/service/discord"
 	"github.com/GALEXY-PANEL/3x-ui/v3/internal/web/service/email"
 	"github.com/GALEXY-PANEL/3x-ui/v3/internal/web/service/panel"
 	"github.com/GALEXY-PANEL/3x-ui/v3/internal/web/session"
@@ -35,15 +35,10 @@ type updateUserForm struct {
 // "unchanged", so clearing needs its own signal — see #5724).
 type updateSettingForm struct {
 	entity.AllSetting
-	TwoFactorCode        string `json:"twoFactorCode" form:"twoFactorCode"`
-	ClearTgBotToken      bool   `json:"clearTgBotToken" form:"clearTgBotToken"`
-	ClearLdapPassword    bool   `json:"clearLdapPassword" form:"clearLdapPassword"`
-	ClearSmtpPassword    bool   `json:"clearSmtpPassword" form:"clearSmtpPassword"`
-	ClearDiscordBotToken bool   `json:"clearDiscordBotToken" form:"clearDiscordBotToken"`
-}
-
-type validateRegexForm struct {
-	Regex string `json:"regex" form:"regex"`
+	TwoFactorCode     string `json:"twoFactorCode" form:"twoFactorCode"`
+	ClearTgBotToken   bool   `json:"clearTgBotToken" form:"clearTgBotToken"`
+	ClearLdapPassword bool   `json:"clearLdapPassword" form:"clearLdapPassword"`
+	ClearSmtpPassword bool   `json:"clearSmtpPassword" form:"clearSmtpPassword"`
 }
 
 // SettingController handles settings and user management operations.
@@ -66,34 +61,34 @@ func NewSettingController(g *gin.RouterGroup) *SettingController {
 func (a *SettingController) initRouter(g *gin.RouterGroup) {
 	g = g.Group("/setting")
 
-	g.POST("/all", a.getAllSetting)
-	g.POST("/defaultSettings", a.getDefaultSettings)
-	g.POST("/factoryDefaults", a.getFactoryDefaults)
-	g.POST("/update", a.updateSetting)
-	g.POST("/validateRegex", a.validateRegex)
+	g.POST("/all", requirePanelPermission("settings", "view"), a.getAllSetting)
+	g.POST("/defaultSettings", requireAnyPanelPermission(
+		panelPermissionRequirement{Section: "settings", Permission: "viewGeneral"},
+		// Clients and Inbounds pages need these computed defaults for list/form UX
+		// even when the operator has no access to Panel Settings itself.
+		panelPermissionRequirement{Section: "users", Permission: "view"},
+		panelPermissionRequirement{Section: "users", Permission: "create"},
+		panelPermissionRequirement{Section: "users", Permission: "update"},
+		panelPermissionRequirement{Section: "inbounds", Permission: "view"},
+		panelPermissionRequirement{Section: "inbounds", Permission: "viewSimple"},
+		panelPermissionRequirement{Section: "inbounds", Permission: "create"},
+		panelPermissionRequirement{Section: "inbounds", Permission: "update"},
+	), a.getDefaultSettings)
+	g.POST("/update", requirePanelPermission("settings", "update"), a.updateSetting)
+	// Updating the current admin's own username/password is protected by the old password check in updateUser.
 	g.POST("/updateUser", a.updateUser)
-	g.POST("/restartPanel", a.restartPanel)
-	g.GET("/getDefaultJsonConfig", a.getDefaultXrayConfig)
-	g.GET("/apiTokens", a.listApiTokens)
-	g.POST("/apiTokens/create", a.createApiToken)
-	g.POST("/apiTokens/delete/:id", a.deleteApiToken)
-	g.POST("/apiTokens/setEnabled/:id", a.setApiTokenEnabled)
-	g.POST("/testSmtp", a.testSmtp)
-	g.POST("/testTgBot", a.testTgBot)
-	g.POST("/testDiscord", a.testDiscord)
-}
-
-func (a *SettingController) validateRegex(c *gin.Context) {
-	form := &validateRegexForm{}
-	if err := c.ShouldBind(form); err != nil {
-		pureJsonMsg(c, http.StatusOK, false, err.Error())
-		return
-	}
-	if err := service.ValidateRegex(form.Regex); err != nil {
-		pureJsonMsg(c, http.StatusOK, false, err.Error())
-		return
-	}
-	pureJsonMsg(c, http.StatusOK, true, "")
+	g.POST("/restartPanel", requirePanelPermission("settings", "update"), a.restartPanel)
+	g.GET("/getDefaultJsonConfig", requirePanelPermission("settings", "viewGeneral"), a.getDefaultXrayConfig)
+	// API token lifecycle is an owner-only browser operation. Bearer and mTLS
+	// callers are rejected by requireOwnerAdminMiddleware even when they are
+	// trusted service principals.
+	g.GET("/apiTokens", requireOwnerAdminMiddleware(), a.listApiTokens)
+	g.GET("/apiTokens/subjects", requireOwnerAdminMiddleware(), a.listApiTokenSubjects)
+	g.POST("/apiTokens/create", requireOwnerAdminMiddleware(), a.createApiToken)
+	g.POST("/apiTokens/delete/:id", requireOwnerAdminMiddleware(), a.deleteApiToken)
+	g.POST("/apiTokens/setEnabled/:id", requireOwnerAdminMiddleware(), a.setApiTokenEnabled)
+	g.POST("/testSmtp", requirePanelPermission("settings", "update"), a.testSmtp)
+	g.POST("/testTgBot", requirePanelPermission("settings", "update"), a.testTgBot)
 }
 
 // getAllSetting retrieves all current settings as the browser-safe view:
@@ -117,10 +112,6 @@ func (a *SettingController) getDefaultSettings(c *gin.Context) {
 	jsonObj(c, result, nil)
 }
 
-func (a *SettingController) getFactoryDefaults(c *gin.Context) {
-	jsonObj(c, a.settingService.GetFactoryDefaults(), nil)
-}
-
 // updateSetting updates all settings with the provided data.
 func (a *SettingController) updateSetting(c *gin.Context) {
 	form, ok := middleware.BindAndValidate[updateSettingForm](c)
@@ -134,27 +125,16 @@ func (a *SettingController) updateSetting(c *gin.Context) {
 	oldTgToken, _ := a.settingService.GetTgBotToken()
 	oldTgChatId, _ := a.settingService.GetTgBotChatId()
 	oldTgAPIServer, _ := a.settingService.GetTgBotAPIServer()
-	oldDiscordEnable, _ := a.settingService.GetDiscordBotEnable()
-	oldDiscordToken, _ := a.settingService.GetDiscordBotToken()
-	oldDiscordChannelId, _ := a.settingService.GetDiscordChannelId()
-	oldDiscordRunTime, _ := a.settingService.GetDiscordRunTime()
-	if twoFactorErr == nil && oldTwoFactor {
-		// Rebinding the authenticator is the same class of change as turning 2FA
-		// off, so both need a current code. Blank still means "unchanged".
-		submittedToken := strings.TrimSpace(allSetting.TwoFactorToken)
-		storedToken, _ := a.settingService.GetTwoFactorToken()
-		if !allSetting.TwoFactorEnable || (submittedToken != "" && submittedToken != storedToken) {
-			if err := a.settingService.VerifyTwoFactorCode(form.TwoFactorCode); err != nil {
-				jsonMsg(c, I18nWeb(c, "pages.settings.toasts.modifySettings"), err)
-				return
-			}
+	if twoFactorErr == nil && oldTwoFactor && !allSetting.TwoFactorEnable {
+		if err := a.settingService.VerifyTwoFactorCode(form.TwoFactorCode); err != nil {
+			jsonMsg(c, I18nWeb(c, "pages.settings.toasts.modifySettings"), err)
+			return
 		}
 	}
 	err := a.settingService.UpdateAllSetting(allSetting, service.SecretClears{
-		TgBotToken:      form.ClearTgBotToken,
-		LdapPassword:    form.ClearLdapPassword,
-		SmtpPassword:    form.ClearSmtpPassword,
-		DiscordBotToken: form.ClearDiscordBotToken,
+		TgBotToken:   form.ClearTgBotToken,
+		LdapPassword: form.ClearLdapPassword,
+		SmtpPassword: form.ClearSmtpPassword,
 	})
 	if err == nil && twoFactorErr == nil && !oldTwoFactor && allSetting.TwoFactorEnable {
 		if bumpErr := a.userService.BumpLoginEpoch(); bumpErr != nil {
@@ -177,15 +157,6 @@ func (a *SettingController) updateSetting(c *gin.Context) {
 				oldTgAPIServer != allSetting.TgBotAPIServer))
 		if tgChanged {
 			reloadTgbotFunc()
-		}
-	}
-	if err == nil && reloadDiscordFunc != nil {
-		discordChanged := oldDiscordEnable != allSetting.DiscordBotEnable ||
-			oldDiscordRunTime != allSetting.DiscordRunTime ||
-			(allSetting.DiscordBotEnable && (oldDiscordToken != allSetting.DiscordBotToken ||
-				oldDiscordChannelId != allSetting.DiscordChannelId))
-		if discordChanged {
-			reloadDiscordFunc()
 		}
 	}
 	jsonMsg(c, I18nWeb(c, "pages.settings.toasts.modifySettings"), err)
@@ -240,22 +211,28 @@ func (a *SettingController) getDefaultXrayConfig(c *gin.Context) {
 }
 
 type apiTokenCreateForm struct {
-	Name      string `json:"name" form:"name"`
-	Scope     string `json:"scope" form:"scope"`
-	ExpiresAt int64  `json:"expiresAt" form:"expiresAt"`
+	Name           string   `json:"name" form:"name"`
+	Kind           string   `json:"kind" form:"kind"`
+	SubjectAdminId int      `json:"subjectAdminId" form:"subjectAdminId"`
+	Scopes         []string `json:"scopes" form:"scopes"`
+	ExpiresAt      int64    `json:"expiresAt" form:"expiresAt"`
 }
 
 type apiTokenEnabledForm struct {
-	Enabled       bool   `json:"enabled" form:"enabled"`
-	ExpectedScope string `json:"expectedScope" form:"expectedScope"`
-}
-
-type apiTokenScopeForm struct {
-	ExpectedScope string `json:"expectedScope" form:"expectedScope"`
+	Enabled bool `json:"enabled" form:"enabled"`
 }
 
 func (a *SettingController) listApiTokens(c *gin.Context) {
 	rows, err := a.apiTokenService.List()
+	if err != nil {
+		jsonMsg(c, I18nWeb(c, "pages.settings.toasts.getSettings"), err)
+		return
+	}
+	jsonObj(c, rows, nil)
+}
+
+func (a *SettingController) listApiTokenSubjects(c *gin.Context) {
+	rows, err := a.apiTokenService.ListDelegatedSubjects()
 	if err != nil {
 		jsonMsg(c, I18nWeb(c, "pages.settings.toasts.getSettings"), err)
 		return
@@ -269,7 +246,26 @@ func (a *SettingController) createApiToken(c *gin.Context) {
 		jsonMsg(c, I18nWeb(c, "pages.settings.toasts.modifySettings"), err)
 		return
 	}
-	row, err := a.apiTokenService.Create(form.Name, form.Scope, form.ExpiresAt)
+	owner := session.GetLoginUser(c)
+	if owner == nil {
+		pureJsonMsg(c, http.StatusUnauthorized, false, "login required")
+		return
+	}
+	// An omitted kind preserves the historical owner-created service-token
+	// request shape ({"name":"..."}) used for remote-panel integrations.
+	// The delegated-token UI always sends kind=delegated explicitly.
+	kind := strings.ToLower(strings.TrimSpace(form.Kind))
+	if kind == "" {
+		kind = model.ApiTokenKindService
+	}
+	row, err := a.apiTokenService.CreateWithOptions(panel.ApiTokenCreateOptions{
+		Name:             form.Name,
+		Kind:             kind,
+		SubjectAdminId:   form.SubjectAdminId,
+		CreatedByAdminId: owner.Id,
+		Scopes:           form.Scopes,
+		ExpiresAt:        form.ExpiresAt,
+	})
 	if err != nil {
 		jsonMsg(c, I18nWeb(c, "pages.settings.toasts.modifySettings"), err)
 		return
@@ -283,12 +279,7 @@ func (a *SettingController) deleteApiToken(c *gin.Context) {
 		jsonMsg(c, I18nWeb(c, "pages.settings.toasts.modifySettings"), err)
 		return
 	}
-	form := &apiTokenScopeForm{}
-	if bindErr := c.ShouldBind(form); bindErr != nil {
-		jsonMsg(c, I18nWeb(c, "pages.settings.toasts.modifySettings"), bindErr)
-		return
-	}
-	jsonMsg(c, I18nWeb(c, "pages.settings.toasts.modifySettings"), a.apiTokenService.DeleteExpectedScope(id, form.ExpectedScope))
+	jsonMsg(c, I18nWeb(c, "pages.settings.toasts.modifySettings"), a.apiTokenService.Delete(id))
 }
 
 func (a *SettingController) setApiTokenEnabled(c *gin.Context) {
@@ -302,7 +293,7 @@ func (a *SettingController) setApiTokenEnabled(c *gin.Context) {
 		jsonMsg(c, I18nWeb(c, "pages.settings.toasts.modifySettings"), bindErr)
 		return
 	}
-	jsonMsg(c, I18nWeb(c, "pages.settings.toasts.modifySettings"), a.apiTokenService.SetEnabledExpectedScope(id, form.ExpectedScope, form.Enabled))
+	jsonMsg(c, I18nWeb(c, "pages.settings.toasts.modifySettings"), a.apiTokenService.SetEnabled(id, form.Enabled))
 }
 
 func (a *SettingController) testSmtp(c *gin.Context) {
@@ -364,31 +355,3 @@ var emailService *email.EmailService
 
 // SetEmailService registers the email service for test endpoints.
 func SetEmailService(s *email.EmailService) { emailService = s }
-
-// reloadDiscordFunc is wired from the web layer to reschedule or cancel Discord notify job.
-var reloadDiscordFunc func()
-
-func SetReloadDiscordFunc(fn func()) { reloadDiscordFunc = fn }
-
-// discordService is set from web layer.
-var discordService *discord.DiscordService
-
-// SetDiscordService registers the Discord service for test endpoints.
-func SetDiscordService(s *discord.DiscordService) { discordService = s }
-
-func (a *SettingController) testDiscord(c *gin.Context) {
-	if discordService == nil {
-		jsonMsg(c, I18nWeb(c, "pages.settings.discordNotInitialized"), errors.New("discord service not available"))
-		return
-	}
-	enabled, err := a.settingService.GetDiscordBotEnable()
-	if err != nil || !enabled {
-		jsonMsg(c, I18nWeb(c, "pages.settings.discordBotNotEnabled"), errors.New("discord bot disabled"))
-		return
-	}
-	if err := discordService.SendTest(c.Request.Context()); err != nil {
-		jsonMsg(c, I18nWeb(c, "pages.settings.discordTestFailed")+": "+err.Error(), err)
-		return
-	}
-	jsonMsg(c, I18nWeb(c, "pages.settings.discordTestSuccess"), nil)
-}

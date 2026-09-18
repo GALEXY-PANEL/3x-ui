@@ -61,12 +61,7 @@ export default function SubLinksModal({
   }, [emails, clients, enabled, jsonEnabled, subSettings]);
 
   const allText = useMemo(
-    () =>
-      rows
-        .map((r) =>
-          jsonEnabled ? `${r.email}\t${r.link}\t${r.jsonLink}` : `${r.email}\t${r.link}`,
-        )
-        .join('\n'),
+    () => rows.map((r) => (jsonEnabled ? `${r.email}\t${r.link}\t${r.jsonLink}` : `${r.email}\t${r.link}`)).join('\n'),
     [rows, jsonEnabled],
   );
 
@@ -107,9 +102,7 @@ export default function SubLinksModal({
       ellipsis: true,
       render: (link: string) => (
         <Tooltip title={link} placement="topLeft">
-          <Typography.Text copyable={false} ellipsis>
-            {link}
-          </Typography.Text>
+          <Typography.Text copyable={false} ellipsis>{link}</Typography.Text>
         </Tooltip>
       ),
     },
@@ -118,13 +111,7 @@ export default function SubLinksModal({
       key: 'actions',
       width: 64,
       render: (_v, row) => (
-        <Button
-          size="small"
-          type="text"
-          aria-label={t('copy')}
-          icon={<CopyOutlined />}
-          onClick={() => copy(row.link, t('copied'))}
-        />
+        <Button size="small" type="text" aria-label={t('copy')} icon={<CopyOutlined />} onClick={() => copy(row.link, t('copied'))} />
       ),
     },
   ];
@@ -137,9 +124,7 @@ export default function SubLinksModal({
       ellipsis: true,
       render: (link: string) => (
         <Tooltip title={link} placement="topLeft">
-          <Typography.Text copyable={false} ellipsis>
-            {link}
-          </Typography.Text>
+          <Typography.Text copyable={false} ellipsis>{link}</Typography.Text>
         </Tooltip>
       ),
     });
@@ -159,9 +144,7 @@ export default function SubLinksModal({
               <Button
                 icon={<CopyOutlined />}
                 disabled={rows.length === 0}
-                onClick={() =>
-                  copy(allText, t('pages.clients.subLinksCopiedAll', { count: rows.length }))
-                }
+                onClick={() => copy(allText, t('pages.clients.subLinksCopiedAll', { count: rows.length }))}
               >
                 {t('pages.clients.subLinksCopyAll')}
               </Button>

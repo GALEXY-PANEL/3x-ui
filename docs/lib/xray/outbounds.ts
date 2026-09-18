@@ -1,4 +1,4 @@
-// Pure builders for Xray outbound objects, matching the wire shapes 3x-ui
+// Pure builders for Xray outbound objects, matching the wire shapes Heimdall
 // emits (internal/util/link/outbound.go + the panel's outbound-defaults.ts):
 //   - VLESS uses the FLAT settings form {address,port,id,flow,encryption}.
 //   - VMess uses the vnext form {vnext:[{address,port,users:[...]}]}.
@@ -162,11 +162,7 @@ function buildSettings(o: OutboundInput): Record<string, unknown> {
         ],
       };
     case 'trojan':
-      return {
-        servers: [
-          { address: s?.address ?? '', port: toPort(s?.port), password: s?.password ?? '' },
-        ],
-      };
+      return { servers: [{ address: s?.address ?? '', port: toPort(s?.port), password: s?.password ?? '' }] };
     case 'shadowsocks':
       return {
         servers: [

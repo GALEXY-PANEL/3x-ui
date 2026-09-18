@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   Alert,
@@ -17,7 +17,7 @@ import { FormProvider, useForm, useWatch } from 'react-hook-form';
 import type { NodeRecord } from '@/api/queries/useNodesQuery';
 import type { RemoteInboundOption } from '@/api/queries/useNodeMutations';
 import type { Msg } from '@/utils';
-import { NodeFormSchema, type NodeFormValues, type ProbeResult } from '@/schemas/node';
+import { createNodeFormDefaultValues, NodeFormSchema, type NodeFormValues, type ProbeResult } from '@/schemas/node';
 import { FormField, rhfZodValidate } from '@/components/form/rhf';
 import { useOutboundTagGroups } from '@/api/queries/useOutboundTags';
 import './NodeFormModal.css';
@@ -35,27 +35,6 @@ interface NodeFormModalProps {
   onOpenChange: (open: boolean) => void;
 }
 
-function defaultValues(): NodeFormValues {
-  return {
-    id: 0,
-    name: '',
-    remark: '',
-    scheme: 'https',
-    address: '',
-    port: 2053,
-    basePath: '/',
-    apiToken: '',
-    hasStoredToken: false,
-    enable: true,
-    allowPrivateAddress: false,
-    tlsVerifyMode: 'verify',
-    pinnedCertSha256: '',
-    inboundSyncMode: 'all',
-    inboundTags: [],
-    outboundTag: '',
-  };
-}
-
 export default function NodeFormModal({
   open,
   mode,
@@ -67,7 +46,7 @@ export default function NodeFormModal({
   onOpenChange,
 }: NodeFormModalProps) {
   const { t } = useTranslation();
-  const methods = useForm<NodeFormValues>({ defaultValues: defaultValues() });
+  const methods = useForm<NodeFormValues>({ defaultValues: createNodeFormDefaultValues() });
   const [messageApi, messageContextHolder] = message.useMessage();
 
   const [submitting, setSubmitting] = useState(false);
@@ -78,7 +57,8 @@ export default function NodeFormModal({
   const [testResult, setTestResult] = useState<ProbeResult | null>(null);
   const scheme = useWatch({ control: methods.control, name: 'scheme' }) ?? 'https';
   const tlsVerifyMode = useWatch({ control: methods.control, name: 'tlsVerifyMode' }) ?? 'verify';
-  const inboundSyncMode = useWatch({ control: methods.control, name: 'inboundSyncMode' }) ?? 'all';
+  const inboundSyncMode = useWatch({ control: methods.control, name: 'inboundSyncMode' }) ?? 'selected';
+  const inboundTags = useWatch({ control: methods.control, name: 'inboundTags' }) ?? [];
   const { data: outboundGroups } = useOutboundTagGroups({ excludeBlackhole: true });
 
   // Outbounds and balancers share one picker (like the panel-outbound selector);
@@ -87,58 +67,42 @@ export default function NodeFormModal({
   // connection") rather than a synthetic option, so it can't read as a second
   // "direct" next to a real freedom outbound.
   const outboundOptions = useMemo<
-    (
-      | { label: string; value: string }
-      | { label: string; options: { label: string; value: string }[] }
-    )[]
+    ({ label: string; value: string } | { label: string; options: { label: string; value: string }[] })[]
   >(() => {
     const outOpts = (outboundGroups?.outbounds ?? []).map((tag) => ({ label: tag, value: tag }));
     if (!outboundGroups?.balancers.length) return outOpts;
     return [
       { label: t('pages.xray.Outbounds'), options: outOpts },
-      {
-        label: t('pages.xray.Balancers'),
-        options: outboundGroups.balancers.map((tag) => ({ label: tag, value: tag })),
-      },
+      { label: t('pages.xray.Balancers'), options: outboundGroups.balancers.map((tag) => ({ label: tag, value: tag })) },
     ];
   }, [outboundGroups, t]);
 
-  // Reset during render, not in an effect, so the first frame is already clean.
-  const [synced, setSynced] = useState<{ mode: string; node: NodeRecord | null } | null>(null);
-  if (!open) {
-    if (synced) setSynced(null);
-  } else if (!synced || synced.mode !== mode || synced.node !== (node ?? null)) {
-    setSynced({ mode, node: node ?? null });
-    const base = defaultValues();
-    const next: NodeFormValues =
-      mode === 'edit' && node
-        ? {
-            ...base,
-            ...(node as unknown as Partial<NodeFormValues>),
-            id: node.id,
-            scheme: (node.scheme as 'http' | 'https') || base.scheme,
-            inboundSyncMode: (node.inboundSyncMode as 'all' | 'selected') || base.inboundSyncMode,
-            inboundTags: node.inboundTags ?? [],
-            apiToken: '',
-            hasStoredToken: node.hasApiToken ?? false,
-          }
-        : base;
+  useEffect(() => {
+    if (!open) return;
+    const base = createNodeFormDefaultValues();
+    const next: NodeFormValues = mode === 'edit' && node
+      ? {
+        ...base,
+        ...(node as unknown as Partial<NodeFormValues>),
+        id: node.id,
+        scheme: (node.scheme as 'http' | 'https') || base.scheme,
+        inboundSyncMode: (node.inboundSyncMode as 'all' | 'selected') || base.inboundSyncMode,
+        inboundTags: node.inboundTags ?? [],
+      }
+      : base;
     if (next.scheme === 'http') next.tlsVerifyMode = 'skip';
     methods.reset(next);
     setInboundOptions((next.inboundTags || []).map((tag) => ({ tag })));
     setTestResult(null);
-  }
+  }, [open, mode, node, methods]);
 
   const title = useMemo(
     () => (mode === 'edit' ? t('pages.nodes.editNode') : t('pages.nodes.addNode')),
     [mode, t],
   );
 
-  const editingWithToken = mode === 'edit' && Boolean(node?.hasApiToken);
-
   function buildPayload(values: NodeFormValues): Partial<NodeRecord> {
-    const token = values.apiToken.trim();
-    const payload: Partial<NodeRecord> = {
+    return {
       id: values.id || 0,
       name: values.name.trim(),
       remark: values.remark?.trim() || '',
@@ -146,6 +110,7 @@ export default function NodeFormModal({
       address: values.address.trim(),
       port: values.port,
       basePath: values.basePath.trim() || '/',
+      apiToken: values.apiToken.trim(),
       enable: values.enable,
       allowPrivateAddress: values.allowPrivateAddress,
       tlsVerifyMode: values.tlsVerifyMode,
@@ -154,12 +119,10 @@ export default function NodeFormModal({
       inboundTags: values.inboundSyncMode === 'selected' ? values.inboundTags : [],
       outboundTag: values.outboundTag || '',
     };
-    if (token) payload.apiToken = token;
-    return payload;
   }
 
   async function onTest() {
-    if (!(await methods.trigger(['name', 'address', 'port']))) return;
+    if (!(await methods.trigger(['address', 'port']))) return;
     setTesting(true);
     setTestResult(null);
     try {
@@ -176,7 +139,7 @@ export default function NodeFormModal({
   }
 
   async function onFetchPin() {
-    if (!(await methods.trigger(['name', 'address', 'port']))) return;
+    if (!(await methods.trigger(['address', 'port']))) return;
     setFetchingPin(true);
     try {
       const payload = buildPayload(methods.getValues());
@@ -220,9 +183,7 @@ export default function NodeFormModal({
       const test = await testConnection(payload);
       const probe = test?.success ? test.obj : null;
       if (!probe || probe.status !== 'online') {
-        setTestResult(
-          probe ?? { status: 'offline', error: test?.msg || t('pages.nodes.connectionFailed') },
-        );
+        setTestResult(probe ?? { status: 'offline', error: test?.msg || t('pages.nodes.connectionFailed') });
         return;
       }
       setTestResult(probe);
@@ -316,7 +277,11 @@ export default function NodeFormModal({
                 </FormField>
               </Col>
               <Col xs={24} md={12}>
-                <FormField label={t('pages.nodes.enable')} name="enable" valueProp="checked">
+                <FormField
+                  label={t('pages.nodes.enable')}
+                  name="enable"
+                  valueProp="checked"
+                >
                   <Switch />
                 </FormField>
               </Col>
@@ -385,15 +350,8 @@ export default function NodeFormModal({
               name="apiToken"
               rules={{ validate: rhfZodValidate(NodeFormSchema.shape.apiToken) }}
               tooltip={t('pages.nodes.apiTokenHint')}
-              extra={editingWithToken ? t('pages.nodes.apiTokenKeepHint') : undefined}
             >
-              <Input.Password
-                placeholder={
-                  editingWithToken
-                    ? t('pages.nodes.apiTokenKeepHint')
-                    : t('pages.nodes.apiTokenPlaceholder')
-                }
-              />
+              <Input.Password placeholder={t('pages.nodes.apiTokenPlaceholder')} />
             </FormField>
 
             <FormField
@@ -417,42 +375,56 @@ export default function NodeFormModal({
             >
               <Select
                 options={[
-                  { value: 'all', label: t('pages.nodes.allInbounds') },
                   { value: 'selected', label: t('pages.nodes.selectedInbounds') },
+                  { value: 'all', label: t('pages.nodes.allInbounds') },
                 ]}
               />
             </FormField>
 
+            {inboundSyncMode === 'all' && (
+              <Alert
+                type="warning"
+                showIcon
+                style={{ marginBottom: 16 }}
+                title={t('pages.nodes.allInboundsWarning')}
+              />
+            )}
+
             {inboundSyncMode === 'selected' && (
-              <FormField
-                label={t('pages.nodes.inboundTags')}
-                name="inboundTags"
-                tooltip={t('pages.nodes.inboundTagsHint')}
-              >
-                <Select
-                  mode="multiple"
-                  allowClear
-                  loading={fetchingInbounds}
-                  placeholder={t('pages.nodes.inboundTagsPlaceholder')}
-                  popupRender={(menu) => (
-                    <>
-                      <Button
-                        type="text"
-                        block
-                        loading={fetchingInbounds}
-                        onClick={onFetchInbounds}
-                      >
-                        {t('pages.nodes.loadInbounds')}
-                      </Button>
-                      {menu}
-                    </>
-                  )}
-                  options={inboundOptions.map((inbound) => ({
-                    value: inbound.tag,
-                    label: `${inbound.remark || inbound.tag}${inbound.protocol ? ` (${inbound.protocol}:${inbound.port || 0})` : ''}`,
-                  }))}
-                />
-              </FormField>
+              <>
+                {inboundTags.length === 0 && (
+                  <Alert
+                    type="info"
+                    showIcon
+                    style={{ marginBottom: 16 }}
+                    title={t('pages.nodes.noInboundsSelected')}
+                  />
+                )}
+                <FormField
+                  label={t('pages.nodes.inboundTags')}
+                  name="inboundTags"
+                  tooltip={t('pages.nodes.inboundTagsHint')}
+                >
+                  <Select
+                    mode="multiple"
+                    allowClear
+                    loading={fetchingInbounds}
+                    placeholder={t('pages.nodes.inboundTagsPlaceholder')}
+                    popupRender={(menu) => (
+                      <>
+                        <Button type="text" block loading={fetchingInbounds} onClick={onFetchInbounds}>
+                          {t('pages.nodes.loadInbounds')}
+                        </Button>
+                        {menu}
+                      </>
+                    )}
+                    options={inboundOptions.map((inbound) => ({
+                      value: inbound.tag,
+                      label: `${inbound.remark || inbound.tag}${inbound.protocol ? ` (${inbound.protocol}:${inbound.port || 0})` : ''}`,
+                    }))}
+                  />
+                </FormField>
+              </>
             )}
 
             <div className="test-row">
@@ -466,9 +438,7 @@ export default function NodeFormModal({
                       type="success"
                       showIcon
                       title={t('pages.nodes.connectionOk', { ms: testResult.latencyMs })}
-                      description={
-                        testResult.xrayVersion ? `Xray ${testResult.xrayVersion}` : undefined
-                      }
+                      description={testResult.xrayVersion ? `Xray ${testResult.xrayVersion}` : undefined}
                     />
                   ) : (
                     <Alert

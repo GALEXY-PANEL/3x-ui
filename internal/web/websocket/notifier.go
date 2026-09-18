@@ -45,6 +45,15 @@ func BroadcastTraffic(traffic any) {
 	}
 }
 
+// BroadcastPresence broadcasts an authoritative online-client snapshot.
+// Presence is intentionally a separate, unthrottled event because dropping the
+// only state transition could leave a browser showing a stale online badge.
+func BroadcastPresence(presence any) {
+	if hub := GetHub(); hub != nil {
+		hub.Broadcast(MessageTypePresence, presence)
+	}
+}
+
 // BroadcastClientStats broadcasts absolute per-client traffic counters. Small
 // installs send the complete row set each cycle (payload key snapshot=true);
 // above the traffic job's snapshot threshold only the rows active in the
@@ -63,6 +72,9 @@ func BroadcastInbounds(inbounds any) {
 	}
 }
 
+// BroadcastNodes broadcasts the fresh node list to all connected clients.
+// Pushed by NodeHeartbeatJob at the end of each 10s tick so the Nodes page
+// reflects status / latency / cpu / mem updates without polling.
 func BroadcastNodes(nodes any) {
 	if hub := GetHub(); hub != nil {
 		hub.Broadcast(MessageTypeNodes, nodes)
