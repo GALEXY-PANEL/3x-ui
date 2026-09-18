@@ -1,3 +1,5 @@
+const JSON_HEADERS = { headers: { 'Content-Type': 'application/json' } } as const;
+
 import { useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
@@ -99,9 +101,9 @@ export default function AdminsPage() {
         dataLimit: (values.dataLimitGB || 0) * 1024 * 1024 * 1024,
       };
       if (editingAdmin) {
-        return HttpUtil.post(`/panel/api/admins/update/${editingAdmin.id}`, payload);
+        return HttpUtil.post(`/panel/api/admins/update/${editingAdmin.id}`, payload, JSON_HEADERS);
       }
-      return HttpUtil.post('/panel/api/admins/create', payload);
+      return HttpUtil.post('/panel/api/admins/create', payload, JSON_HEADERS);
     },
     onSuccess: (res: any) => {
       if (res?.success) {

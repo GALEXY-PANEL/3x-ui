@@ -1,3 +1,5 @@
+const JSON_HEADERS = { headers: { 'Content-Type': 'application/json' } } as const;
+
 import { useCallback, useState, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
@@ -164,9 +166,9 @@ export default function AdminRolesPage() {
         permissions: JSON.stringify(permsArray),
       };
       if (editingRole) {
-        return HttpUtil.post(`/panel/api/admins/roles/update/${editingRole.id}`, payload);
+        return HttpUtil.post(`/panel/api/admins/roles/update/${editingRole.id}`, payload, JSON_HEADERS);
       }
-      return HttpUtil.post('/panel/api/admins/roles/create', payload);
+      return HttpUtil.post('/panel/api/admins/roles/create', payload, JSON_HEADERS);
     },
     onSuccess: (res: any) => {
       if (res?.success) {
