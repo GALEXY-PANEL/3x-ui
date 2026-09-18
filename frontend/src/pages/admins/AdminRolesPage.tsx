@@ -47,7 +47,7 @@ interface AdminRole {
 
 export default function AdminRolesPage() {
   const { t } = useTranslation();
-  usePageTitle(t('roles.title', 'مدیریت نقش‌ها و دسترسی‌ها'));
+  usePageTitle('Admin Roles & Permissions');
   const { isDark, isUltra, antdThemeConfig } = useTheme();
   const { isMobile } = useMediaQuery();
   const { token } = theme.useToken();
@@ -74,13 +74,13 @@ export default function AdminRolesPage() {
     },
     onSuccess: (res: any) => {
       if (res?.success) {
-        message.success(t('common.saved', 'نقش با موفقیت ذخیره شد'));
+        message.success('Role saved successfully');
         setModalVisible(false);
         setEditingRole(null);
         form.resetFields();
         queryClient.invalidateQueries({ queryKey: ['admin-roles'] });
       } else {
-        message.error(res?.msg || t('common.failed', 'خطا در ذخیره‌سازی'));
+        message.error(res?.msg || 'Failed to save role');
       }
     },
   });
@@ -91,10 +91,10 @@ export default function AdminRolesPage() {
     },
     onSuccess: (res: any) => {
       if (res?.success) {
-        message.success(t('common.deleted', 'نقش حذف شد'));
+        message.success('Role deleted successfully');
         queryClient.invalidateQueries({ queryKey: ['admin-roles'] });
       } else {
-        message.error(res?.msg || t('common.failed', 'خطا در حذف'));
+        message.error(res?.msg || 'Failed to delete role');
       }
     },
   });
@@ -114,25 +114,25 @@ export default function AdminRolesPage() {
 
   const columns: TableColumnsType<AdminRole> = [
     {
-      title: t('roles.name', 'نام نقش'),
+      title: 'Role Name',
       dataIndex: 'name',
       key: 'name',
       render: (text) => <strong>{text}</strong>,
     },
     {
-      title: t('roles.slug', 'شناسه یکتا (Slug)'),
+      title: 'Slug',
       dataIndex: 'slug',
       key: 'slug',
       render: (text) => <Tag color="geekblue">{text}</Tag>,
     },
     {
-      title: t('roles.description', 'توضیحات'),
+      title: 'Description',
       dataIndex: 'description',
       key: 'description',
       render: (text) => text || '-',
     },
     {
-      title: t('roles.permissions', 'مجوزها'),
+      title: 'Permissions',
       dataIndex: 'permissions',
       key: 'permissions',
       render: (perms) => (
@@ -142,26 +142,26 @@ export default function AdminRolesPage() {
       ),
     },
     {
-      title: t('common.actions', 'عملیات'),
+      title: 'Actions',
       key: 'actions',
       width: 110,
       render: (_, record) => (
         <Space size="middle">
-          <Tooltip title={t('common.edit', 'ویرایش')}>
+          <Tooltip title="Edit">
             <Button
               type="text"
               icon={<EditOutlined style={{ color: token.colorPrimary }} />}
               onClick={() => openEditModal(record)}
             />
           </Tooltip>
-          <Tooltip title={t('common.delete', 'حذف')}>
+          <Tooltip title="Delete">
             <Button
               type="text"
               danger
               icon={<DeleteOutlined />}
               onClick={() => {
                 Modal.confirm({
-                  title: t('common.confirmDelete', 'آیا از حذف این نقش مطمئن هستید؟'),
+                  title: 'Are you sure you want to delete this role?',
                   onOk: () => deleteMutation.mutate(record.id),
                 });
               }}
@@ -186,14 +186,14 @@ export default function AdminRolesPage() {
                   <Row gutter={[16, isMobile ? 16 : 12]}>
                     <Col xs={12} sm={12} md={12}>
                       <Statistic
-                        title={t('roles.totalRoles', 'تعداد نقش‌های تعریف‌شده')}
+                        title="Defined Roles"
                         value={String(roles.length)}
                         prefix={<SafetyCertificateOutlined />}
                       />
                     </Col>
                     <Col xs={12} sm={12} md={12}>
                       <Statistic
-                        title={t('roles.accessModel', 'مدل کنترل دسترسی')}
+                        title="Access Model"
                         value="Role-Based (RBAC)"
                         prefix={<SafetyOutlined />}
                       />
@@ -209,12 +209,12 @@ export default function AdminRolesPage() {
                   title={
                     <Space>
                       <SafetyCertificateOutlined style={{ color: token.colorPrimary }} />
-                      <span>{t('roles.title', 'مدیریت نقش‌ها و مجوزها')}</span>
+                      <span>Admin Roles & Permissions</span>
                     </Space>
                   }
                   extra={
                     <Button type="primary" icon={<PlusOutlined />} onClick={openCreateModal}>
-                      {t('roles.create', 'افزودن نقش جدید')}
+                      Add New Role
                     </Button>
                   }
                 >
@@ -224,31 +224,31 @@ export default function AdminRolesPage() {
                     rowKey="id"
                     loading={isLoading}
                     pagination={{ pageSize: 10 }}
-                    locale={{ emptyText: t('common.empty', 'داده‌ای وجود ندارد') }}
+                    locale={{ emptyText: 'No Data' }}
                   />
                 </Card>
               </Col>
             </Row>
 
             <Modal
-              title={editingRole ? t('roles.edit', 'ویرایش نقش') : t('roles.create', 'ایجاد نقش جدید')}
+              title={editingRole ? 'Edit Role' : 'Create New Role'}
               open={modalVisible}
               onCancel={() => setModalVisible(false)}
               onOk={() => form.submit()}
               confirmLoading={saveMutation.isPending}
             >
               <Form form={form} layout="vertical" onFinish={(vals) => saveMutation.mutate(vals)}>
-                <Form.Item name="name" label={t('roles.name', 'نام نقش')} rules={[{ required: true }]}>
-                  <Input placeholder="مثال: فروشنده، پشتیبان" />
+                <Form.Item name="name" label="Role Name" rules={[{ required: true, message: 'Please enter role name' }]}>
+                  <Input placeholder="e.g. Reseller, Support" />
                 </Form.Item>
-                <Form.Item name="slug" label={t('roles.slug', 'شناسه یکتا (Slug)')} rules={[{ required: true }]}>
-                  <Input placeholder="مثال: reseller, operator" disabled={!!editingRole} />
+                <Form.Item name="slug" label="Unique Identifier (Slug)" rules={[{ required: true, message: 'Please enter slug' }]}>
+                  <Input placeholder="e.g. reseller, operator" disabled={!!editingRole} />
                 </Form.Item>
-                <Form.Item name="description" label={t('roles.description', 'توضیحات')}>
-                  <Input.TextArea placeholder="توضیح درباره وظایف این نقش" />
+                <Form.Item name="description" label="Description">
+                  <Input.TextArea placeholder="Role duties and responsibilities" />
                 </Form.Item>
-                <Form.Item name="permissions" label={t('roles.permissions', 'مجوزها (JSON Array)')} rules={[{ required: true }]}>
-                  <Input.TextArea rows={3} placeholder='["*"] یا ["clients:read", "clients:create"]' />
+                <Form.Item name="permissions" label="Permissions (JSON Array)" rules={[{ required: true, message: 'Please specify permissions' }]}>
+                  <Input.TextArea rows={3} placeholder='["*"] or ["clients:read", "clients:create"]' />
                 </Form.Item>
               </Form>
             </Modal>

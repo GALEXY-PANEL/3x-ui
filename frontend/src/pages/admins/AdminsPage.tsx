@@ -59,8 +59,8 @@ interface AdminRole {
 }
 
 export default function AdminsPage() {
-  const { t, i18n } = useTranslation();
-  usePageTitle(t('admins.title', 'مدیریت ادمین‌ها و نمایندگان'));
+  const { t } = useTranslation();
+  usePageTitle('Admin & Reseller Management');
   const { isDark, isUltra, antdThemeConfig } = useTheme();
   const { isMobile } = useMediaQuery();
   const { token } = theme.useToken();
@@ -105,13 +105,13 @@ export default function AdminsPage() {
     },
     onSuccess: (res: any) => {
       if (res?.success) {
-        message.success(t('common.saved', 'ادمین با موفقیت ذخیره شد'));
+        message.success('Admin saved successfully');
         setModalVisible(false);
         setEditingAdmin(null);
         form.resetFields();
         queryClient.invalidateQueries({ queryKey: ['admins-list'] });
       } else {
-        message.error(res?.msg || t('common.failed', 'خطا در ذخیره‌سازی'));
+        message.error(res?.msg || 'Failed to save admin');
       }
     },
   });
@@ -122,10 +122,10 @@ export default function AdminsPage() {
     },
     onSuccess: (res: any) => {
       if (res?.success) {
-        message.success(t('common.deleted', 'ادمین حذف شد'));
+        message.success('Admin deleted successfully');
         queryClient.invalidateQueries({ queryKey: ['admins-list'] });
       } else {
-        message.error(res?.msg || t('common.failed', 'خطا در حذف'));
+        message.error(res?.msg || 'Failed to delete admin');
       }
     },
   });
@@ -149,7 +149,7 @@ export default function AdminsPage() {
 
   const columns: TableColumnsType<Admin> = [
     {
-      title: t('admins.username', 'نام کاربری'),
+      title: 'Username',
       dataIndex: 'username',
       key: 'username',
       render: (text) => (
@@ -160,58 +160,58 @@ export default function AdminsPage() {
       ),
     },
     {
-      title: t('admins.role', 'نقش'),
+      title: 'Role',
       dataIndex: 'roleId',
       key: 'roleId',
-      render: (id) => <Tag color="geekblue">{roleMap[id] || `نقش #${id}`}</Tag>,
+      render: (id) => <Tag color="geekblue">{roleMap[id] || `Role #${id}`}</Tag>,
     },
     {
-      title: t('admins.status', 'وضعیت'),
+      title: 'Status',
       dataIndex: 'status',
       key: 'status',
       render: (status) => (
         <Tag color={status === 'active' ? 'success' : 'error'} icon={status === 'active' ? <CheckCircleOutlined /> : <CloseCircleOutlined />}>
-          {status === 'active' ? t('common.active', 'فعال') : t('common.disabled', 'غیرفعال')}
+          {status === 'active' ? 'Active' : 'Disabled'}
         </Tag>
       ),
     },
     {
-      title: t('admins.traffic', 'مصرف / سقف ترافیک'),
+      title: 'Traffic Usage / Limit',
       key: 'traffic',
       render: (_, record) => (
         <span>
           {SizeFormatter.sizeFormat(record.usedBytes || 0)} /{' '}
-          {record.dataLimit > 0 ? SizeFormatter.sizeFormat(record.dataLimit) : t('common.unlimited', 'نامحدود')}
+          {record.dataLimit > 0 ? SizeFormatter.sizeFormat(record.dataLimit) : 'Unlimited'}
         </span>
       ),
     },
     {
-      title: t('admins.note', 'یادداشت'),
+      title: 'Note',
       dataIndex: 'note',
       key: 'note',
       render: (text) => text || '-',
     },
     {
-      title: t('common.actions', 'عملیات'),
+      title: 'Actions',
       key: 'actions',
       width: 110,
       render: (_, record) => (
         <Space size="middle">
-          <Tooltip title={t('common.edit', 'ویرایش')}>
+          <Tooltip title="Edit">
             <Button
               type="text"
               icon={<EditOutlined style={{ color: token.colorPrimary }} />}
               onClick={() => openEditModal(record)}
             />
           </Tooltip>
-          <Tooltip title={t('common.delete', 'حذف')}>
+          <Tooltip title="Delete">
             <Button
               type="text"
               danger
               icon={<DeleteOutlined />}
               onClick={() => {
                 Modal.confirm({
-                  title: t('common.confirmDelete', 'آیا از حذف این ادمین مطمئن هستید؟'),
+                  title: 'Are you sure you want to delete this admin?',
                   onOk: () => deleteMutation.mutate(record.id),
                 });
               }}
@@ -236,21 +236,21 @@ export default function AdminsPage() {
                   <Row gutter={[16, isMobile ? 16 : 12]}>
                     <Col xs={12} sm={12} md={8}>
                       <Statistic
-                        title={t('admins.totalAdmins', 'کل ادمین‌ها')}
+                        title="Total Admins"
                         value={String(totalAdmins)}
                         prefix={<TeamOutlined />}
                       />
                     </Col>
                     <Col xs={12} sm={12} md={8}>
                       <Statistic
-                        title={t('admins.activeAdmins', 'ادمین‌های فعال')}
+                        title="Active Admins"
                         value={String(activeAdmins)}
                         prefix={<CheckCircleOutlined />}
                       />
                     </Col>
                     <Col xs={24} sm={24} md={8}>
                       <Statistic
-                        title={t('admins.totalUsage', 'کل ترافیک مصرفی ادمین‌ها')}
+                        title="Total Admin Traffic"
                         value={SizeFormatter.sizeFormat(totalTraffic)}
                         prefix={<PieChartOutlined />}
                       />
@@ -266,12 +266,12 @@ export default function AdminsPage() {
                   title={
                     <Space>
                       <TeamOutlined style={{ color: token.colorPrimary }} />
-                      <span>{t('admins.title', 'مدیریت ادمین‌ها و نمایندگان')}</span>
+                      <span>Admins & Resellers</span>
                     </Space>
                   }
                   extra={
                     <Button type="primary" icon={<PlusOutlined />} onClick={openCreateModal}>
-                      {t('admins.create', 'افزودن ادمین جدید')}
+                      Add New Admin
                     </Button>
                   }
                 >
@@ -281,49 +281,49 @@ export default function AdminsPage() {
                     rowKey="id"
                     loading={isLoadingAdmins}
                     pagination={{ pageSize: 10 }}
-                    locale={{ emptyText: t('common.empty', 'داده‌ای وجود ندارد') }}
+                    locale={{ emptyText: 'No Data' }}
                   />
                 </Card>
               </Col>
             </Row>
 
             <Modal
-              title={editingAdmin ? t('admins.edit', 'ویرایش ادمین') : t('admins.create', 'ایجاد ادمین جدید')}
+              title={editingAdmin ? 'Edit Admin' : 'Create New Admin'}
               open={modalVisible}
               onCancel={() => setModalVisible(false)}
               onOk={() => form.submit()}
               confirmLoading={saveMutation.isPending}
             >
               <Form form={form} layout="vertical" onFinish={(vals) => saveMutation.mutate(vals)}>
-                <Form.Item name="username" label={t('admins.username', 'نام کاربری')} rules={[{ required: true }]}>
+                <Form.Item name="username" label="Username" rules={[{ required: true, message: 'Please enter username' }]}>
                   <Input placeholder="username" disabled={!!editingAdmin} />
                 </Form.Item>
                 <Form.Item
                   name="password"
-                  label={t('admins.password', 'رمز عبور')}
-                  rules={[{ required: !editingAdmin, message: 'لطفاً رمز عبور را وارد کنید' }]}
+                  label="Password"
+                  rules={[{ required: !editingAdmin, message: 'Please enter password' }]}
                 >
-                  <Input.Password placeholder={editingAdmin ? 'در صورت عدم تغییر خالی بگذارید' : 'password'} />
+                  <Input.Password placeholder={editingAdmin ? 'Leave blank to keep current' : 'password'} />
                 </Form.Item>
-                <Form.Item name="roleId" label={t('admins.role', 'نقش دسترسی')} rules={[{ required: true }]}>
+                <Form.Item name="roleId" label="Role" rules={[{ required: true, message: 'Please select a role' }]}>
                   <Select
                     options={roles.map((r) => ({ label: r.name, value: r.id }))}
-                    placeholder="انتخاب نقش"
+                    placeholder="Select role"
                   />
                 </Form.Item>
-                <Form.Item name="status" label={t('admins.status', 'وضعیت')} rules={[{ required: true }]}>
+                <Form.Item name="status" label="Status" rules={[{ required: true }]}>
                   <Select
                     options={[
-                      { label: 'فعال (Active)', value: 'active' },
-                      { label: 'غیرفعال (Disabled)', value: 'disabled' },
+                      { label: 'Active', value: 'active' },
+                      { label: 'Disabled', value: 'disabled' },
                     ]}
                   />
                 </Form.Item>
-                <Form.Item name="dataLimitGB" label={t('admins.dataLimit', 'سقف کل ترافیک (GB)')}>
-                  <InputNumber min={0} style={{ width: '100%' }} placeholder="0 = نامحدود" />
+                <Form.Item name="dataLimitGB" label="Traffic Limit (GB)">
+                  <InputNumber min={0} style={{ width: '100%' }} placeholder="0 = Unlimited" />
                 </Form.Item>
-                <Form.Item name="note" label={t('admins.note', 'یادداشت')}>
-                  <Input.TextArea placeholder="توضیحات و یادداشت" />
+                <Form.Item name="note" label="Note">
+                  <Input.TextArea placeholder="Notes & remarks" />
                 </Form.Item>
               </Form>
             </Modal>
