@@ -22,7 +22,7 @@ func NewAdminController(g *gin.RouterGroup) *AdminController {
 
 func (a *AdminController) initRouter(g *gin.RouterGroup) {
 	adminGroup := g.Group("/admins")
-	adminGroup.Use(checkLogin)
+	adminGroup.Use(a.checkLogin)
 
 	adminGroup.GET("/roles", a.getRoles)
 	adminGroup.POST("/roles/create", a.createRole)
