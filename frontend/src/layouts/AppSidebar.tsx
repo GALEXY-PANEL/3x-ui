@@ -70,7 +70,7 @@ type IconName =
   | 'logout'
   | 'apidocs'
   | 'outbound'
-  | 'routing';
+  | 'routing' | 'admins' | 'roles';
 
 const iconByName: Record<IconName, ComponentType> = {
   dashboard: DashboardOutlined,
@@ -85,6 +85,8 @@ const iconByName: Record<IconName, ComponentType> = {
   apidocs: ApiOutlined,
   outbound: ExportOutlined,
   routing: SwapOutlined,
+  admins: TeamOutlined,
+  roles: SafetyOutlined,
 };
 
 function DonateButton({ ariaLabel }: { ariaLabel: string }) {
@@ -229,6 +231,8 @@ export default function AppSidebar() {
       { key: '/hosts', icon: 'hosts', title: t('menu.hosts') },
       { key: '/outbound', icon: 'outbound', title: t('menu.outbounds') },
       { key: '/routing', icon: 'routing', title: t('menu.routing') },
+      { key: '/admins', icon: 'admins', title: t('admins.title', 'مدیریت ادمین‌ها') },
+      { key: '/admin-roles', icon: 'roles', title: t('roles.title', 'نقش‌ها و دسترسی‌ها') },
       { key: '/settings', icon: 'setting', title: t('menu.settings') },
       { key: '/xray', icon: 'tool', title: t('menu.xray') },
       { key: '/api-docs', icon: 'apidocs', title: t('menu.apiDocs') },

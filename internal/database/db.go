@@ -85,6 +85,8 @@ func allModels() []any {
 		&model.ClientGlobalTraffic{},
 		&model.OutboundSubscription{},
 		&model.SubBalancer{},
+		&model.AdminRole{},
+		&model.Admin{},
 	}
 }
 
