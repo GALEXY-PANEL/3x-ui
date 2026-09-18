@@ -28,7 +28,7 @@ import {
 } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
-import { useTheme } from '@/hooks/useTheme';
+import { theme } from 'antd';
 import { usePageTitle } from '@/hooks/usePageTitle';
 import { HttpUtil, SizeFormatter } from '@/utils';
 import AppSidebar from '@/layouts/AppSidebar';
@@ -54,7 +54,7 @@ interface AdminRole {
 export default function AdminsPage() {
   const { t } = useTranslation();
   usePageTitle(t('admins.title', 'مدیریت ادمین‌ها و نمایندگان'));
-  const { token } = useTheme();
+  const { token } = theme.useToken();
   const queryClient = useQueryClient();
 
   const [modalVisible, setModalVisible] = useState(false);

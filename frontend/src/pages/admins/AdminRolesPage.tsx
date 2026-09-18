@@ -26,7 +26,7 @@ import {
 } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
-import { useTheme } from '@/hooks/useTheme';
+import { theme } from 'antd';
 import { usePageTitle } from '@/hooks/usePageTitle';
 import { HttpUtil } from '@/utils';
 import AppSidebar from '@/layouts/AppSidebar';
@@ -44,7 +44,7 @@ interface AdminRole {
 export default function AdminRolesPage() {
   const { t } = useTranslation();
   usePageTitle(t('roles.title', 'مدیریت نقش‌ها'));
-  const { token } = useTheme();
+  const { token } = theme.useToken();
   const queryClient = useQueryClient();
 
   const [modalVisible, setModalVisible] = useState(false);
