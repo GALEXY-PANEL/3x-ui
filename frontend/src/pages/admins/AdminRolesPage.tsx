@@ -277,9 +277,21 @@ export default function AdminRolesPage() {
       render: (_, record) => {
         let perms: string[] = [];
         try {
-          perms = JSON.parse(record.permissions || '[]');
-        } catch {}
-        const isSuper = perms.includes('*');
+          const parsed = JSON.parse(record.permissions || '[]');
+          if (Array.isArray(parsed)) {
+            perms = parsed;
+          } else if (typeof parsed === 'object' && parsed !== null) {
+            perms = Object.keys(parsed).map((k) => );
+          }
+        } catch {
+          if (typeof record.permissions === 'string' && record.permissions) {
+            perms = [record.permissions];
+          }
+        }
+        if (!Array.isArray(perms)) {
+          perms = [];
+        }
+        const isSuper = perms.includes('*') || record.slug === 'owner';
         if (isSuper) {
           return <Tag color="gold" icon={<SafetyCertificateOutlined />}>Full Access (Super Admin)</Tag>;
         }
