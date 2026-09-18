@@ -57,7 +57,7 @@ func (s *AdminService) GetAllAdmins() ([]model.Admin, error) {
 func (s *AdminService) CreateAdmin(admin *model.Admin) error {
 	db := database.GetDB()
 	if admin.Password != "" {
-		hash, err := crypto.HashPassword(admin.Password)
+		hash, err := crypto.HashPasswordAsBcrypt(admin.Password)
 		if err != nil {
 			return err
 		}
@@ -73,7 +73,7 @@ func (s *AdminService) UpdateAdmin(admin *model.Admin) error {
 		return err
 	}
 	if admin.Password != "" {
-		hash, err := crypto.HashPassword(admin.Password)
+		hash, err := crypto.HashPasswordAsBcrypt(admin.Password)
 		if err != nil {
 			return err
 		}
